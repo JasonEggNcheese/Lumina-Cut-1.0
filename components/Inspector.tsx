@@ -45,9 +45,10 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
 
   if (!clip) {
     return (
-      <div className="w-80 bg-gray-900 border-l border-gray-800 p-8 flex flex-col items-center justify-center text-gray-500">
+      <div className="w-full md:w-80 bg-gray-900 border-l border-gray-800 p-8 flex flex-col items-center justify-center text-gray-500 h-full">
         <Sliders size={48} className="mb-4 opacity-20" />
         <p className="text-sm text-center">Select a clip to view properties</p>
+        <button onClick={onClose} className="mt-8 md:hidden text-gray-400 underline">Close Inspector</button>
       </div>
     );
   }
@@ -174,7 +175,7 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
   };
 
   return (
-    <div className="w-80 bg-gray-900 border-l border-gray-800 flex flex-col h-full z-20 shadow-xl">
+    <div className="w-full md:w-80 bg-gray-900 border-l border-gray-800 flex flex-col h-full z-20 shadow-xl">
       <div className="h-14 border-b border-gray-800 flex items-center justify-between px-4 bg-gray-850">
         <h2 className="font-semibold text-white flex items-center gap-2">
           <Sliders size={16} className="text-violet-400" />
@@ -183,7 +184,7 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
         <button onClick={onClose} className="text-gray-400 hover:text-white"><X size={18}/></button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+      <div className="flex-1 overflow-y-auto p-4 custom-scrollbar pb-24 md:pb-4">
         <div className="mb-6">
           <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
             Information

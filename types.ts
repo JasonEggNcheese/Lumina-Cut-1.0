@@ -1,3 +1,4 @@
+
 export enum TrackType {
   VIDEO = 'video',
   AUDIO = 'audio',
@@ -22,6 +23,13 @@ export interface VisualEffect {
   type: VisualEffectType;
   name: string;
   intensity: number; // 0 to 100
+}
+
+export type TransitionType = 'fade' | 'slide-left' | 'slide-right' | 'wipe' | 'zoom' | 'dissolve';
+
+export interface Transition {
+  type: TransitionType;
+  duration: number; // seconds
 }
 
 export interface ClipProperties {
@@ -62,6 +70,7 @@ export interface Clip {
   src: string;
   selected?: boolean;
   properties: ClipProperties;
+  transition?: Transition; // Entry transition
 }
 
 export interface Track {
@@ -70,6 +79,8 @@ export interface Track {
   name: string;
   isMuted: boolean;
   isLocked: boolean;
+  isSolo: boolean;
+  isRecordArmed: boolean;
 }
 
 export interface ProjectState {

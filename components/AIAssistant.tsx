@@ -34,7 +34,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ onClose }) => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-900 border-l border-gray-800 w-80 shadow-2xl absolute right-0 top-0 z-50">
+    <div className="flex flex-col h-full bg-gray-900 border-l border-gray-800 w-full md:w-80 shadow-2xl absolute right-0 top-0 z-50">
       <div className="flex items-center justify-between p-4 border-b border-gray-800 bg-gray-850">
         <div className="flex items-center gap-2 text-violet-400">
           <Sparkles size={18} />
@@ -64,7 +64,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ onClose }) => {
         </Button>
       </div>
 
-      <div className="p-4 flex-1 overflow-y-auto">
+      <div className="p-4 flex-1 overflow-y-auto custom-scrollbar pb-20 md:pb-4">
         <div className="mb-4">
           <label className="block text-xs font-medium text-gray-400 mb-1">
             {mode === 'ideas' ? 'Describe your vibe or song...' : 'Describe the video concept...'}
