@@ -1,0 +1,7 @@
+{
+  "name": "Lumina Cut",
+  "description": "A sleek, dark-themed web-based video editor inspired by modern desktop editors. Features a multi-track timeline, real-time preview, split/merge tools, and an AI creative assistant.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
