@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { ProjectState, Track, TrackType, Clip, MediaAsset, AspectRatio, TransitionType } from './types';
+import { ProjectState, Track, TrackType, Clip, MediaAsset, AspectRatio, TransitionType, ClipProperties, Marker } from './types';
 import { Timeline } from './components/Timeline';
 import { Player } from './components/Player';
 import { MediaLibrary } from './components/MediaLibrary';
 import { AIAssistant } from './components/AIAssistant';
 import { Inspector } from './components/Inspector';
 import { TransitionsPanel } from './components/TransitionsPanel';
+import { TextOverlayPanel } from './components/TextOverlayPanel';
 import { Button } from './components/Button';
-import { Download, Sparkles, Layout, Clapperboard, Scissors, Wand2, Palette, Music, FileVideo, MonitorSmartphone, Zap } from 'lucide-react';
+import { Download, Sparkles, Layout, Clapperboard, Scissors, Wand2, Palette, Music, FileVideo, MonitorSmartphone, Zap, Type } from 'lucide-react';
 
 // Initial Mock Data
 const INITIAL_TRACKS: Track[] = [
+  { id: 't1', type: TrackType.TEXT, name: 'Text', isMuted: false, isLocked: false, isSolo: false, isRecordArmed: false },
   { id: '1', type: TrackType.VIDEO, name: 'Video 1', isMuted: false, isLocked: false, isSolo: false, isRecordArmed: false },
   { id: '2', type: TrackType.VIDEO, name: 'Video 2', isMuted: false, isLocked: false, isSolo: false, isRecordArmed: false },
   { id: '3', type: TrackType.AUDIO, name: 'Audio 1', isMuted: false, isLocked: false, isSolo: false, isRecordArmed: false },
@@ -21,6 +23,7 @@ const App: React.FC = () => {
   const [project, setProject] = useState<ProjectState>({
     tracks: INITIAL_TRACKS,
     clips: [],
+    markers: [],
     currentTime: 0,
     duration: 30,
     zoom: 20, // pixels per second
@@ -36,6 +39,7 @@ const App: React.FC = () => {
   // Panel Visibility States
   const [showMediaLibrary, setShowMediaLibrary] = useState(true);
   const [showTransitions, setShowTransitions] = useState(false);
+  const [showTextPanel, setShowTextPanel] = useState(false);
 
   // Adjust default visibility for mobile on load
   useEffect(() => {
@@ -43,6 +47,7 @@ const App: React.FC = () => {
           setShowMediaLibrary(false);
           setShowInspector(false);
           setShowTransitions(false);
+          setShowTextPanel(false);
       }
   }, []);
 
@@ -87,6 +92,45 @@ const App: React.FC = () => {
 
   const addAsset = (asset: MediaAsset) => {
     setAssets(prev => [...prev, asset]);
+  };
+
+  const addTextClip = (name: string, properties: Partial<ClipProperties>) => {
+    const textTrack = project.tracks.find(t => t.type === TrackType.TEXT);
+    if (!textTrack) {
+        alert("No text track found!");
+        return;
+    }
+
+    const newClip: Clip = {
+        id: Math.random().toString(36).substr(2, 9),
+        assetId: 'text',
+        name,
+        trackId: textTrack.id,
+        startOffset: project.currentTime,
+        duration: 5, // Default duration for text
+        sourceStart: 0,
+        type: 'text',
+        src: '', // No src for text clips
+        selected: true,
+        properties: {
+          ...properties
+        }
+    };
+    
+    // Deselect others
+    const updatedClips = project.clips.map(c => ({ ...c, selected: false }));
+
+    setProject(p => ({
+        ...p,
+        clips: [...updatedClips, newClip],
+        duration: Math.max(p.duration, newClip.startOffset + newClip.duration + 5)
+    }));
+
+    // Auto show inspector on add, close text panel on mobile
+    setShowInspector(true);
+    if (window.innerWidth < 768) {
+        setShowTextPanel(false);
+    }
   };
 
   const addToTimeline = (asset: MediaAsset) => {
@@ -206,6 +250,34 @@ const App: React.FC = () => {
         tracks: p.tracks.map(t => t.id === trackId ? { ...t, isRecordArmed: !t.isRecordArmed } : t)
     }));
   };
+  
+  // Marker Handlers
+  const handleAddMarker = (time: number) => {
+      const label = prompt('Enter marker name:', `Marker ${project.markers.length + 1}`);
+      if (!label) return;
+
+      const newMarker: Marker = {
+          id: Math.random().toString(36).substr(2, 9),
+          time,
+          label,
+          color: '#34d399' // A nice teal color
+      };
+      setProject(p => ({ ...p, markers: [...p.markers, newMarker] }));
+  };
+
+  const handleUpdateMarker = (id: string, updates: Partial<Marker>) => {
+      setProject(p => ({
+          ...p,
+          markers: p.markers.map(m => m.id === id ? { ...m, ...updates } : m)
+      }));
+  };
+
+  const handleDeleteMarker = (id: string) => {
+      setProject(p => ({
+          ...p,
+          markers: p.markers.filter(m => m.id !== id)
+      }));
+  };
 
   const handleNavClick = (id: string) => {
       setActiveTab(id);
@@ -214,20 +286,28 @@ const App: React.FC = () => {
       if (window.innerWidth < 768) {
           setShowMediaLibrary(false);
           setShowTransitions(false);
+          setShowTextPanel(false);
           setShowInspector(false);
           setShowAiPanel(false);
 
           if (id === 'media') setShowMediaLibrary(true);
           else if (id === 'transitions') setShowTransitions(true);
+          else if (id === 'text') setShowTextPanel(true);
           else if (id === 'color') setShowInspector(true);
       } else {
           // Desktop Logic - toggle panels
           if (id === 'media') {
               setShowMediaLibrary(true);
               setShowTransitions(false);
+              setShowTextPanel(false);
           } else if (id === 'transitions') {
               setShowTransitions(true);
               setShowMediaLibrary(false);
+              setShowTextPanel(false);
+          } else if (id === 'text') {
+              setShowTextPanel(true);
+              setShowMediaLibrary(false);
+              setShowTransitions(false);
           }
       }
   };
@@ -287,20 +367,15 @@ const App: React.FC = () => {
       {/* Main Workspace */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
         
-        {/* Left: Media Pool */}
-        <div className={`fixed inset-0 z-40 bg-gray-900 md:static md:inset-auto md:z-auto md:block ${showMediaLibrary ? 'block' : 'hidden'} transition-all duration-200`}>
-            <MediaLibrary 
-                assets={assets} 
-                onAddAsset={addAsset} 
-                onAddToTimeline={addToTimeline} 
-                onCloseMobile={() => setShowMediaLibrary(false)}
-            />
+        {/* Left Panels Container */}
+        <div className={`fixed inset-0 z-40 bg-gray-900 md:static md:inset-auto md:z-auto md:block transition-all duration-200
+            ${showMediaLibrary || showTransitions || showTextPanel ? 'block' : 'hidden'}
+        `}>
+            {showMediaLibrary && <MediaLibrary assets={assets} onAddAsset={addAsset} onAddToTimeline={addToTimeline} onCloseMobile={() => setShowMediaLibrary(false)} />}
+            {showTransitions && <TransitionsPanel onCloseMobile={() => setShowTransitions(false)} />}
+            {showTextPanel && <TextOverlayPanel onAddTextClip={addTextClip} onCloseMobile={() => setShowTextPanel(false)} />}
         </div>
 
-        {/* Left: Transitions Panel */}
-        <div className={`fixed inset-0 z-40 bg-gray-900 md:static md:inset-auto md:z-auto md:block ${showTransitions ? 'block' : 'hidden'} transition-all duration-200`}>
-             <TransitionsPanel onCloseMobile={() => setShowTransitions(false)} />
-        </div>
 
         {/* Center: Viewport & Timeline */}
         <div className="flex-1 flex flex-col min-w-0 bg-gray-900 h-full">
@@ -338,6 +413,9 @@ const App: React.FC = () => {
                     onToggleTrackSolo={toggleTrackSolo}
                     onToggleTrackRecord={toggleTrackRecord}
                     onApplyTransition={handleApplyTransition}
+                    onAddMarker={handleAddMarker}
+                    onUpdateMarker={handleUpdateMarker}
+                    onDeleteMarker={handleDeleteMarker}
                 />
             </div>
         </div>
@@ -364,12 +442,13 @@ const App: React.FC = () => {
       {/* Bottom Page Navigation (Mobile Friendly) */}
       <div className="h-14 bg-gray-950 border-t border-gray-800 flex items-center justify-around md:justify-center shrink-0 z-50">
           <NavItem id="media" icon={FileVideo} label="Media" />
+          <NavItem id="text" icon={Type} label="Text" />
           <NavItem id="transitions" icon={Zap} label="Trans" />
-          <NavItem id="cut" icon={Scissors} label="Cut" />
           <NavItem id="edit" icon={Clapperboard} label="Edit" />
           <NavItem id="color" icon={Palette} label="Color" />
           <div className="hidden md:flex">
              <NavItem id="fairlight" icon={Music} label="Fairlight" />
+             <NavItem id="cut" icon={Scissors} label="Cut" />
           </div>
           <NavItem id="deliver" icon={Download} label="Deliver" />
       </div>

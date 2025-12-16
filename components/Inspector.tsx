@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Clip, VisualEffect, VisualEffectType } from '../types';
-import { Sliders, Aperture, Music2, Wand2, X, ScanFace, Loader2, CheckCircle2, Eye, Crop, MonitorSmartphone, StretchHorizontal, Timer, Plus, Trash2, Droplets, Palette, Sun, Zap, CircleDashed } from 'lucide-react';
+import { Clip, VisualEffect, VisualEffectType, ChromaKey, TransitionType } from '../types';
+import { Sliders, Aperture, Music2, Wand2, X, ScanFace, Loader2, CheckCircle2, Eye, Crop, MonitorSmartphone, StretchHorizontal, Timer, Plus, Trash2, Droplets, Palette, Sun, Zap, CircleDashed, Pipette, Type, AlignCenter, AlignLeft, AlignRight } from 'lucide-react';
 import { detectMaskableObjects, analyzeReframeFocus, generateExtendedFrames } from '../services/geminiService';
 
 interface InspectorProps {
@@ -37,6 +37,15 @@ const AVAILABLE_EFFECTS: { type: VisualEffectType; name: string; icon: any }[] =
     { type: 'vignette', name: 'Vignette', icon: CircleDashed },
 ];
 
+const TRANSITIONS: { type: TransitionType; name: string }[] = [
+  { type: 'fade', name: 'Cross Dissolve' },
+  { type: 'slide-left', name: 'Slide Left' },
+  { type: 'slide-right', name: 'Slide Right' },
+  { type: 'zoom', name: 'Zoom In' },
+  { type: 'wipe', name: 'Linear Wipe' },
+  { type: 'dissolve', name: 'Glitch' },
+];
+
 export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClose, projectAspectRatio }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isReframing, setIsReframing] = useState(false);
@@ -60,6 +69,11 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
         [key]: value
       }
     });
+  };
+  
+  const updateChromaKeyProp = (key: keyof ChromaKey, value: any) => {
+      const currentChromaKey = clip.properties.chromaKey || { enabled: false, keyColor: '#00ff00', tolerance: 20, feather: 10 };
+      updateProp('chromaKey', { ...currentChromaKey, [key]: value });
   };
 
   const updatePropNested = (parent: string, key: string, value: any) => {
@@ -94,6 +108,32 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
   const handleUpdateEffectIntensity = (id: string, intensity: number) => {
       const currentEffects = clip.properties.effects || [];
       updateProp('effects', currentEffects.map(e => e.id === id ? { ...e, intensity } : e));
+  };
+  
+  const handleTransitionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const type = e.target.value as TransitionType | 'none';
+    if (type === 'none') {
+        handleRemoveTransition();
+    } else {
+        onUpdateClip(clip.id, {
+            transition: {
+                type,
+                duration: clip.transition?.duration || 1.0,
+            },
+        });
+    }
+  };
+
+  const handleTransitionDurationChange = (duration: number) => {
+      if (clip.transition) {
+          onUpdateClip(clip.id, {
+              transition: { ...clip.transition, duration },
+          });
+      }
+  };
+
+  const handleRemoveTransition = () => {
+      onUpdateClip(clip.id, { transition: undefined });
   };
 
   const handleAnalyzeObjects = async () => {
@@ -137,7 +177,6 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
           if (success) {
               const currentAiDuration = clip.properties.aiExtendedDuration || 0;
               
-              // Update both the total duration and the AI property atomically
               onUpdateClip(clip.id, { 
                   duration: clip.duration + extensionSeconds,
                   properties: {
@@ -174,6 +213,8 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
     }
   };
 
+  const chroma = clip.properties.chromaKey || { enabled: false, keyColor: '#00ff00', tolerance: 20, feather: 10 };
+
   return (
     <div className="w-full md:w-80 bg-gray-900 border-l border-gray-800 flex flex-col h-full z-20 shadow-xl">
       <div className="h-14 border-b border-gray-800 flex items-center justify-between px-4 bg-gray-850">
@@ -195,6 +236,131 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
             <div className="flex justify-between"><span>Type</span> <span className="uppercase text-violet-400">{clip.type}</span></div>
           </div>
         </div>
+
+        {/* Text Tools */}
+        {clip.type === 'text' && (
+            <div className="mb-6">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <Type size={14} /> Text
+                </h3>
+                <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+                    <textarea 
+                        value={clip.properties.textContent || ''}
+                        onChange={(e) => updateProp('textContent', e.target.value)}
+                        className="w-full bg-gray-900/50 text-sm text-gray-200 p-2 rounded-md border border-gray-700 focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none resize-y mb-4"
+                        rows={3}
+                    />
+                    <Slider 
+                        label="Font Size" 
+                        value={clip.properties.fontSize ?? 24} 
+                        min={8} max={200} 
+                        onChange={(v: number) => updateProp('fontSize', v)} 
+                        unit="px"
+                    />
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label className="text-xs text-gray-400 font-medium mb-1 block">Color</label>
+                            <input type="color" value={clip.properties.fontColor || '#FFFFFF'} onChange={e => updateProp('fontColor', e.target.value)} className="w-full h-8 p-0 border-none rounded cursor-pointer bg-gray-700" />
+                        </div>
+                        <div>
+                            <label className="text-xs text-gray-400 font-medium mb-1 block">Background</label>
+                            <input type="color" value={clip.properties.backgroundColor || '#000000'} onChange={e => updateProp('backgroundColor', e.target.value)} className="w-full h-8 p-0 border-none rounded cursor-pointer bg-gray-700" />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="text-xs text-gray-400 font-medium mb-2 block">Alignment</label>
+                        <div className="flex bg-gray-900/50 rounded-md p-1">
+                            {(['left', 'center', 'right'] as const).map(align => (
+                                <button key={align} onClick={() => updateProp('textAlign', align)} className={`flex-1 p-1.5 rounded-sm text-gray-400 transition-colors ${clip.properties.textAlign === align ? 'bg-violet-600 text-white' : 'hover:bg-gray-700'}`}>
+                                    {align === 'left' ? <AlignLeft size={16}/> : align === 'center' ? <AlignCenter size={16}/> : <AlignRight size={16}/>}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* General Transform Tools */}
+        <div className="mb-6">
+          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+            <Wand2 size={14} /> Transform
+          </h3>
+          <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+            <Slider 
+              label="Opacity" 
+              value={clip.properties.opacity ?? 100} 
+              min={0} max={100} 
+              onChange={(v: number) => updateProp('opacity', v)} 
+              unit="%"
+            />
+            <Slider 
+              label="Scale" 
+              value={clip.properties.scale ?? 100} 
+              min={10} max={300} 
+              onChange={(v: number) => updateProp('scale', v)} 
+              unit="%"
+            />
+            <div className="grid grid-cols-2 gap-4">
+                 <Slider 
+                    label="Pos X" 
+                    value={clip.properties.position?.x ?? 0} 
+                    min={-100} max={100} 
+                    onChange={(v: number) => updatePropNested('position', 'x', v)} 
+                 />
+                 <Slider 
+                    label="Pos Y" 
+                    value={clip.properties.position?.y ?? 0} 
+                    min={-100} max={100} 
+                    onChange={(v: number) => updatePropNested('position', 'y', v)} 
+                 />
+            </div>
+          </div>
+        </div>
+
+        {/* Transitions Section */}
+        {(clip.type === 'video' || clip.type === 'image' || clip.type === 'text') && (
+            <div className="mb-6">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <Zap size={14} /> Transition
+                </h3>
+                <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+                    <div className="flex items-center justify-between mb-3">
+                        <label className="text-sm text-gray-300">Effect</label>
+                        <select
+                            value={clip.transition?.type || 'none'}
+                            onChange={handleTransitionChange}
+                            className="bg-gray-700 text-xs text-white p-2 rounded border border-gray-600 focus:outline-none focus:border-violet-500"
+                        >
+                            <option value="none">None</option>
+                            {TRANSITIONS.map(t => (
+                                <option key={t.type} value={t.type}>{t.name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {clip.transition && (
+                        <>
+                            <Slider
+                                label="Duration"
+                                value={clip.transition.duration.toFixed(1)}
+                                min={0.1}
+                                max={3}
+                                step={0.1}
+                                onChange={handleTransitionDurationChange}
+                                unit="s"
+                            />
+                            <button
+                                onClick={handleRemoveTransition}
+                                className="w-full mt-2 text-xs text-red-400 hover:bg-red-900/50 p-2 rounded flex items-center justify-center gap-2 transition-colors"
+                            >
+                                <Trash2 size={14} /> Remove Transition
+                            </button>
+                        </>
+                    )}
+                </div>
+            </div>
+        )}
 
         {/* Video / Image Tools */}
         {(clip.type === 'video' || clip.type === 'image') && (
@@ -322,42 +488,51 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
                     )}
                 </div>
              </div>
-
+             
              <div className="mb-6">
-              <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-                <Wand2 size={14} /> Transform
-              </h3>
-              <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
-                <Slider 
-                  label="Opacity" 
-                  value={clip.properties.opacity ?? 100} 
-                  min={0} max={100} 
-                  onChange={(v: number) => updateProp('opacity', v)} 
-                  unit="%"
-                />
-                <Slider 
-                  label="Scale" 
-                  value={clip.properties.scale ?? 100} 
-                  min={10} max={300} 
-                  onChange={(v: number) => updateProp('scale', v)} 
-                  unit="%"
-                />
-                <div className="grid grid-cols-2 gap-4">
-                     <Slider 
-                        label="Pos X" 
-                        value={clip.properties.position?.x ?? 0} 
-                        min={-100} max={100} 
-                        onChange={(v: number) => updatePropNested('position', 'x', v)} 
-                     />
-                     <Slider 
-                        label="Pos Y" 
-                        value={clip.properties.position?.y ?? 0} 
-                        min={-100} max={100} 
-                        onChange={(v: number) => updatePropNested('position', 'y', v)} 
-                     />
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <Pipette size={14} /> Chroma Key
+                </h3>
+                <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+                    <div className="flex items-center justify-between mb-3">
+                        <label htmlFor="chroma-toggle" className="text-sm text-gray-300">Enable Effect</label>
+                        <button 
+                            id="chroma-toggle"
+                            onClick={() => updateChromaKeyProp('enabled', !chroma.enabled)}
+                            className={`w-10 h-5 rounded-full transition-colors flex items-center p-1 ${chroma.enabled ? 'bg-green-500 justify-end' : 'bg-gray-700 justify-start'}`}
+                        >
+                            <div className="w-3 h-3 bg-white rounded-full shadow-md"></div>
+                        </button>
+                    </div>
+                    {chroma.enabled && (
+                        <>
+                            <div className="flex items-center gap-2 mb-4">
+                                <label className="text-xs text-gray-400 font-medium">Key Color</label>
+                                <input 
+                                    type="color" 
+                                    value={chroma.keyColor}
+                                    onChange={(e) => updateChromaKeyProp('keyColor', e.target.value)}
+                                    className="w-8 h-6 p-0 border-none rounded cursor-pointer bg-gray-700"
+                                />
+                                <button onClick={() => updateChromaKeyProp('keyColor', '#00ff00')} className="w-4 h-4 rounded-full bg-green-500 border border-gray-900"></button>
+                                <button onClick={() => updateChromaKeyProp('keyColor', '#0000ff')} className="w-4 h-4 rounded-full bg-blue-500 border border-gray-900"></button>
+                            </div>
+                            <Slider 
+                                label="Tolerance"
+                                value={chroma.tolerance}
+                                min={0} max={100}
+                                onChange={(v: number) => updateChromaKeyProp('tolerance', v)}
+                            />
+                            <Slider 
+                                label="Feather"
+                                value={chroma.feather}
+                                min={0} max={100}
+                                onChange={(v: number) => updateChromaKeyProp('feather', v)}
+                            />
+                        </>
+                    )}
                 </div>
-              </div>
-            </div>
+             </div>
 
             <div className="mb-6">
               <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -397,7 +572,6 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
                     <Droplets size={14} /> Effects Browser
                 </h3>
                 
-                {/* Applied Effects List */}
                 {clip.properties.effects && clip.properties.effects.length > 0 && (
                     <div className="mb-4 space-y-2">
                         {clip.properties.effects.map(effect => (
@@ -429,7 +603,6 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
                     </div>
                 )}
 
-                {/* Available Effects Grid */}
                 <div className="grid grid-cols-2 gap-2">
                     {AVAILABLE_EFFECTS.map(effect => (
                         <button 

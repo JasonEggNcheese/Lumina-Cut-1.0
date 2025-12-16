@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
-import { ProjectState, Track, Clip, TrackType, TransitionType } from '../types';
-import { Video, Mic, Type, Scissors, Trash2, ZoomIn, ZoomOut, MoreHorizontal, MousePointer2 } from 'lucide-react';
+import { ProjectState, Track, Clip, TrackType, TransitionType, Marker } from '../types';
+import { Video, Mic, Type, Scissors, Trash2, ZoomIn, ZoomOut, MoreHorizontal, MousePointer2, Flag } from 'lucide-react';
 
 interface TimelineProps {
   state: ProjectState;
@@ -14,6 +14,9 @@ interface TimelineProps {
   onToggleTrackSolo: (trackId: string) => void;
   onToggleTrackRecord: (trackId: string) => void;
   onApplyTransition?: (clipId: string, type: TransitionType) => void;
+  onAddMarker: (time: number) => void;
+  onUpdateMarker: (id: string, updates: Partial<Marker>) => void;
+  onDeleteMarker: (id: string) => void;
 }
 
 interface DragState {
@@ -24,6 +27,18 @@ interface DragState {
   initialDuration: number;
   initialSourceStart: number;
   type: 'move' | 'resize-left' | 'resize-right';
+}
+
+interface MarkerDragState {
+    markerId: string;
+    startX: number;
+    initialTime: number;
+}
+
+interface ContextMenu {
+    x: number;
+    y: number;
+    markerId: string;
 }
 
 const WaveformVisualizer = ({ width, color = "#10b981", height = 24 }: { width: number, color?: string, height?: number }) => {
@@ -67,12 +82,17 @@ export const Timeline: React.FC<TimelineProps> = ({
   onToggleTrackMute,
   onToggleTrackSolo,
   onToggleTrackRecord,
-  onApplyTransition
+  onApplyTransition,
+  onAddMarker,
+  onUpdateMarker,
+  onDeleteMarker
 }) => {
   const timelineRef = useRef<HTMLDivElement>(null);
   const [isDraggingHeader, setIsDraggingHeader] = useState(false);
   const [dragState, setDragState] = useState<DragState | null>(null);
+  const [markerDragState, setMarkerDragState] = useState<MarkerDragState | null>(null);
   const [snapLine, setSnapLine] = useState<number | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
 
   // Convert time to pixels
   const timeToPx = (time: number) => time * state.zoom;
@@ -95,6 +115,7 @@ export const Timeline: React.FC<TimelineProps> = ({
 
   const handleTimelineHeaderClick = (e: React.MouseEvent) => {
     handleTimelineInteraction(e.clientX);
+    if (contextMenu) setContextMenu(null);
   };
 
   const handleHeaderMouseMove = (e: React.MouseEvent) => {
@@ -158,6 +179,22 @@ export const Timeline: React.FC<TimelineProps> = ({
     });
   };
   
+  const handleMarkerMouseDown = (e: React.MouseEvent | React.TouchEvent, marker: Marker) => {
+      e.stopPropagation();
+      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+      setMarkerDragState({
+          markerId: marker.id,
+          startX: clientX,
+          initialTime: marker.time
+      });
+  };
+
+  const handleMarkerContextMenu = (e: React.MouseEvent, marker: Marker) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setContextMenu({ x: e.clientX, y: e.clientY, markerId: marker.id });
+  };
+  
   // Transition Drag & Drop Handlers
   const handleDragOver = (e: React.DragEvent) => {
       e.preventDefault();
@@ -168,7 +205,7 @@ export const Timeline: React.FC<TimelineProps> = ({
       e.preventDefault();
       e.stopPropagation();
       const type = e.dataTransfer.getData('transitionType') as TransitionType;
-      if (type && onApplyTransition && (clip.type === 'video' || clip.type === 'image')) {
+      if (type && onApplyTransition && (clip.type === 'video' || clip.type === 'image' || clip.type === 'text')) {
           onApplyTransition(clip.id, type);
       }
   };
@@ -186,6 +223,15 @@ export const Timeline: React.FC<TimelineProps> = ({
             }
         }
         
+        // Generate Shared Snap Points
+        const snapPoints = [0, state.currentTime, ...state.markers.map(m => m.time)];
+        state.clips.forEach(c => {
+            snapPoints.push(c.startOffset);
+            snapPoints.push(c.startOffset + c.duration);
+        });
+        const SNAP_THRESHOLD_PX = 10;
+        const snapThreshold = pxToTime(SNAP_THRESHOLD_PX);
+        
         if (dragState) {
             const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
             const deltaX = clientX - dragState.startX;
@@ -193,26 +239,18 @@ export const Timeline: React.FC<TimelineProps> = ({
 
             const clip = state.clips.find(c => c.id === dragState.clipId);
             if (!clip) return;
+            
+            // Remove current clip from snap points
+            const clipSnapPoints = snapPoints.filter(p => p !== clip.startOffset && p !== clip.startOffset + clip.duration);
 
-            // Generate Snap Points
-            const snapPoints = [0, state.currentTime];
-             state.clips.forEach(c => {
-                if (c.id !== clip.id) {
-                    snapPoints.push(c.startOffset);
-                    snapPoints.push(c.startOffset + c.duration);
-                }
-            });
-            const SNAP_THRESHOLD_PX = 10;
-            const snapThreshold = pxToTime(SNAP_THRESHOLD_PX);
             let snapCandidate = null;
 
             if (dragState.type === 'move') {
                 let newStart = Math.max(0, dragState.initialStartOffset + deltaTime);
 
-                // Check Start Snapping
+                // Check Horizontal Snapping
                 let closestDist = snapThreshold;
-                for (const point of snapPoints) {
-                    // Check Start
+                for (const point of clipSnapPoints) {
                     const distStart = Math.abs(newStart - point);
                     if (distStart < closestDist) {
                         closestDist = distStart;
@@ -220,7 +258,6 @@ export const Timeline: React.FC<TimelineProps> = ({
                         snapCandidate = point;
                     }
                     
-                    // Check End (move start so end aligns)
                     const newEnd = newStart + clip.duration;
                     const distEnd = Math.abs(newEnd - point);
                     if (distEnd < closestDist) {
@@ -230,14 +267,44 @@ export const Timeline: React.FC<TimelineProps> = ({
                     }
                 }
                 setSnapLine(snapCandidate);
-                onUpdateClip(clip.id, { startOffset: newStart });
+
+                // Check Vertical Track Change
+                let newTrackId = dragState.initialTrackId;
+                if (timelineRef.current) {
+                    const rect = timelineRef.current.getBoundingClientRect();
+                    const y = ('touches' in e ? e.touches[0].clientY : e.clientY) - rect.top;
+                    
+                    const RULER_HEIGHT = 32; // h-8
+                    const TRACK_HEIGHT = 96; // h-24
+                    const trackAreaY = y - RULER_HEIGHT;
+
+                    if (trackAreaY > 0) {
+                        const trackIndex = Math.floor(trackAreaY / TRACK_HEIGHT);
+                        if (trackIndex >= 0 && trackIndex < state.tracks.length) {
+                            const targetTrack = state.tracks[trackIndex];
+                            
+                            const canDrop = (
+                                (clip.type === 'video' || clip.type === 'image') && targetTrack.type === TrackType.VIDEO
+                            ) || (
+                                clip.type === 'audio' && targetTrack.type === TrackType.AUDIO
+                            ) || (
+                                clip.type === 'text' && targetTrack.type === TrackType.TEXT
+                            );
+                            
+                            if (canDrop) {
+                                newTrackId = targetTrack.id;
+                            }
+                        }
+                    }
+                }
+                
+                onUpdateClip(clip.id, { startOffset: newStart, trackId: newTrackId });
 
             } else if (dragState.type === 'resize-left') {
                 let newStart = dragState.initialStartOffset + deltaTime;
                 
-                // Snap New Start
                 let closestDist = snapThreshold;
-                for (const point of snapPoints) {
+                for (const point of clipSnapPoints) {
                     const dist = Math.abs(newStart - point);
                     if (dist < closestDist) {
                         closestDist = dist;
@@ -246,7 +313,6 @@ export const Timeline: React.FC<TimelineProps> = ({
                     }
                 }
                 
-                // Recalculate delta based on snapped start
                 deltaTime = newStart - dragState.initialStartOffset;
                 
                 const newDuration = dragState.initialDuration - deltaTime;
@@ -264,9 +330,8 @@ export const Timeline: React.FC<TimelineProps> = ({
             } else if (dragState.type === 'resize-right') {
                 let newEnd = dragState.initialStartOffset + dragState.initialDuration + deltaTime;
 
-                // Snap New End
                 let closestDist = snapThreshold;
-                for (const point of snapPoints) {
+                for (const point of clipSnapPoints) {
                     const dist = Math.abs(newEnd - point);
                     if (dist < closestDist) {
                         closestDist = dist;
@@ -275,7 +340,6 @@ export const Timeline: React.FC<TimelineProps> = ({
                     }
                 }
 
-                // Recalculate delta
                 const newDuration = newEnd - dragState.initialStartOffset;
                 
                 if (newDuration >= 0.1) {
@@ -284,28 +348,56 @@ export const Timeline: React.FC<TimelineProps> = ({
                 }
             }
         }
+        
+        if (markerDragState) {
+            const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+            const deltaX = clientX - markerDragState.startX;
+            let newTime = Math.max(0, markerDragState.initialTime + pxToTime(deltaX));
+            
+            // Marker snapping
+            const markerSnapPoints = snapPoints.filter(p => p !== markerDragState.initialTime);
+            let closestDist = snapThreshold;
+            let snapCandidate = null;
+            for (const point of markerSnapPoints) {
+                const dist = Math.abs(newTime - point);
+                if (dist < closestDist) {
+                    closestDist = dist;
+                    newTime = point;
+                    snapCandidate = point;
+                }
+            }
+            setSnapLine(snapCandidate);
+            onUpdateMarker(markerDragState.markerId, { time: newTime });
+        }
     };
 
     const handleGlobalUp = () => {
         setIsDraggingHeader(false);
         setDragState(null);
+        setMarkerDragState(null);
         setSnapLine(null);
     };
+    
+    const handleGlobalClick = () => {
+        if(contextMenu) setContextMenu(null);
+    }
 
-    if (isDraggingHeader || dragState) {
+    if (isDraggingHeader || dragState || markerDragState) {
         window.addEventListener('mousemove', handleGlobalMove);
         window.addEventListener('touchmove', handleGlobalMove, { passive: false });
         window.addEventListener('mouseup', handleGlobalUp);
         window.addEventListener('touchend', handleGlobalUp);
     }
+    window.addEventListener('click', handleGlobalClick);
 
     return () => {
         window.removeEventListener('mousemove', handleGlobalMove);
         window.removeEventListener('touchmove', handleGlobalMove);
         window.removeEventListener('mouseup', handleGlobalUp);
         window.removeEventListener('touchend', handleGlobalUp);
+        window.removeEventListener('click', handleGlobalClick);
     };
-  }, [isDraggingHeader, dragState, state.zoom, state.clips, state.currentTime]);
+  }, [isDraggingHeader, dragState, markerDragState, state, onUpdateClip, onSeek, onUpdateMarker, contextMenu]);
 
 
   // Generate ticks
@@ -363,6 +455,13 @@ export const Timeline: React.FC<TimelineProps> = ({
                 title="Delete (Del)"
             >
                 <Trash2 size={16} />
+            </button>
+            <button
+                onClick={() => onAddMarker(state.currentTime)}
+                className="p-2 md:p-1.5 rounded bg-gray-800 md:bg-transparent hover:bg-gray-700 text-gray-300 hover:text-white"
+                title="Add Marker (M)"
+            >
+                <Flag size={16} />
             </button>
         </div>
 
@@ -430,6 +529,28 @@ export const Timeline: React.FC<TimelineProps> = ({
                 style={{ minWidth: '100%', width: timeToPx(state.duration) + 500 }}
             >
                 {renderRuler()}
+
+                {/* Markers */}
+                {state.markers.map(marker => (
+                    <div
+                        key={marker.id}
+                        className="absolute top-0 h-8 flex flex-col items-center group cursor-pointer touch-none"
+                        style={{ left: timeToPx(marker.time) }}
+                        onMouseDown={(e) => handleMarkerMouseDown(e, marker)}
+                        onClick={(e) => { e.stopPropagation(); onSeek(marker.time); }}
+                        onContextMenu={(e) => handleMarkerContextMenu(e, marker)}
+                    >
+                        <div 
+                           className="w-3 h-3 rotate-45 -mt-1.5"
+                           style={{ backgroundColor: marker.color }}
+                        ></div>
+                        <div className="h-full w-px" style={{ backgroundColor: marker.color }}></div>
+                        <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-gray-900 border border-gray-700 text-white text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-lg">
+                           {marker.label}
+                        </div>
+                    </div>
+                ))}
+                
                 {/* Playhead Header Handle */}
                 <div 
                     className="absolute top-0 h-8 w-10 -ml-5 z-20 cursor-ew-resize group flex justify-center touch-none"
@@ -437,10 +558,28 @@ export const Timeline: React.FC<TimelineProps> = ({
                     onMouseDown={(e) => { e.stopPropagation(); setIsDraggingHeader(true); }}
                     onTouchStart={(e) => { e.stopPropagation(); setIsDraggingHeader(true); }}
                 >
-                    {/* Enlarged touch target for mobile */}
                     <div className="w-0 h-0 border-l-[6px] border-r-[6px] border-t-[8px] border-l-transparent border-r-transparent border-t-violet-500" />
                 </div>
             </div>
+
+            {/* Marker Context Menu */}
+            {contextMenu && (
+                <div 
+                    className="fixed z-50 bg-gray-800 border border-gray-700 rounded-md shadow-lg text-white text-xs"
+                    style={{ top: contextMenu.y, left: contextMenu.x }}
+                >
+                    <button
+                        onClick={() => {
+                            onDeleteMarker(contextMenu.markerId);
+                            setContextMenu(null);
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-red-800/50 flex items-center gap-2"
+                    >
+                        <Trash2 size={12} /> Delete Marker
+                    </button>
+                </div>
+            )}
+
 
             {/* Tracks & Clips */}
             <div className="relative" style={{ minWidth: '100%', width: timeToPx(state.duration) + 500 }}>
@@ -475,7 +614,7 @@ export const Timeline: React.FC<TimelineProps> = ({
                                     key={clip.id}
                                     className={`absolute top-2 bottom-2 rounded-md overflow-hidden cursor-pointer border ring-offset-1 ring-offset-gray-900 transition-shadow touch-none group
                                         ${clip.selected ? 'border-violet-400 ring-2 ring-violet-500 z-10' : 'border-gray-700 hover:border-gray-500'}
-                                        ${clip.type === 'audio' ? 'bg-emerald-900/30' : 'bg-violet-900/30'}
+                                        ${clip.type === 'audio' ? 'bg-emerald-900/30' : clip.type === 'text' ? 'bg-blue-900/30' : 'bg-violet-900/30'}
                                         ${isDragging ? 'opacity-80 scale-[1.01] shadow-xl z-50 cursor-grabbing' : 'cursor-grab'}
                                     `}
                                     style={{
@@ -515,10 +654,16 @@ export const Timeline: React.FC<TimelineProps> = ({
                                         </div>
                                     )}
                                     
-                                    {/* Clip Label */}
+                                    {/* Clip Label & Content */}
                                     <div className="absolute top-0 left-0 right-0 px-2 py-1 text-xs truncate text-white/90 drop-shadow-md select-none bg-black/20 z-10 pointer-events-none">
                                         {clip.name}
                                     </div>
+
+                                    {clip.type === 'text' && (
+                                        <div className="p-2 pt-6 text-center text-xs text-white/80 overflow-hidden pointer-events-none whitespace-pre-wrap">
+                                            {clip.properties.textContent}
+                                        </div>
+                                    )}
                                     
                                     {/* Resize Handles */}
                                     {clip.selected && (

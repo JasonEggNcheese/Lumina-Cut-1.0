@@ -32,8 +32,15 @@ export interface Transition {
   duration: number; // seconds
 }
 
+export interface ChromaKey {
+  enabled: boolean;
+  keyColor: string; // hex color e.g. #00ff00
+  tolerance: number; // 0-100
+  feather: number; // 0-100
+}
+
 export interface ClipProperties {
-  // Video
+  // Video & General
   opacity?: number;
   scale?: number;
   position?: { x: number; y: number }; // Percentage offset (-50 to 50)
@@ -44,6 +51,7 @@ export interface ClipProperties {
   
   // Visual Effects
   effects?: VisualEffect[];
+  chromaKey?: ChromaKey;
 
   // Audio
   volume?: number;
@@ -56,6 +64,15 @@ export interface ClipProperties {
 
   // AI Smart Extend
   aiExtendedDuration?: number; // Seconds added to the end via AI
+
+  // Text
+  textContent?: string;
+  fontFamily?: string;
+  fontSize?: number; // in pixels
+  fontWeight?: 'normal' | 'bold';
+  fontColor?: string; // hex color
+  textAlign?: 'left' | 'center' | 'right';
+  backgroundColor?: string; // hex color with alpha
 }
 
 export interface Clip {
@@ -66,7 +83,7 @@ export interface Clip {
   startOffset: number; // Time on the timeline (seconds) when this clip starts
   duration: number; // Duration of the clip in the timeline
   sourceStart: number; // Start time within the original source file
-  type: 'video' | 'image' | 'audio';
+  type: 'video' | 'image' | 'audio' | 'text';
   src: string;
   selected?: boolean;
   properties: ClipProperties;
@@ -83,9 +100,17 @@ export interface Track {
   isRecordArmed: boolean;
 }
 
+export interface Marker {
+  id: string;
+  time: number;
+  label: string;
+  color: string;
+}
+
 export interface ProjectState {
   tracks: Track[];
   clips: Clip[];
+  markers: Marker[];
   currentTime: number; // Current playhead position in seconds
   duration: number; // Total project duration
   zoom: number; // Pixels per second
