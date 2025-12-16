@@ -36,6 +36,7 @@ const AVAILABLE_EFFECTS: { type: VisualEffectType; name: string; icon: any }[] =
     { type: 'invert', name: 'Negative', icon: CircleDashed },
     { type: 'vignette', name: 'Vignette', icon: CircleDashed },
     { type: 'rgbShift', name: 'RGB Shift', icon: Layers },
+    { type: 'glitch', name: 'Digital Glitch', icon: Zap },
     { type: 'scanLines', name: 'Scan Lines', icon: Minus },
     { type: 'sharpen', name: 'Sharpen', icon: Triangle },
     { type: 'sketch', name: 'Sketch', icon: PenTool },

@@ -16,7 +16,7 @@ export interface MediaAsset {
   thumbnail?: string;
 }
 
-export type VisualEffectType = 'blur' | 'sepia' | 'grayscale' | 'invert' | 'hue' | 'vignette' | 'rgbShift' | 'scanLines' | 'sharpen' | 'sketch' | 'spotRemover';
+export type VisualEffectType = 'blur' | 'sepia' | 'grayscale' | 'invert' | 'hue' | 'vignette' | 'rgbShift' | 'scanLines' | 'sharpen' | 'sketch' | 'spotRemover' | 'glitch';
 
 export interface VisualEffect {
   id: string;
@@ -63,6 +63,10 @@ export interface ClipProperties {
   // Timing
   speed?: number; // playback speed multiplier e.g., 1, 2, 0.5
   reversed?: boolean;
+  speedRamp?: {
+    enabled: boolean;
+    points: { time: number; speed: number }[]; // time is 0-1 progress, speed is multiplier
+  };
 
   // AI Magic Mask
   detectedObjects?: string[];
