@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Clip, VisualEffect, VisualEffectType, ChromaKey, TransitionType } from '../types';
-import { Sliders, Aperture, Music2, Wand2, X, ScanFace, Loader2, CheckCircle2, Eye, Crop, MonitorSmartphone, StretchHorizontal, Timer, Plus, Trash2, Droplets, Palette, Sun, Zap, CircleDashed, Pipette, Type, AlignCenter, AlignLeft, AlignRight, Mountain } from 'lucide-react';
+import { Sliders, Aperture, Music2, Wand2, X, ScanFace, Loader2, CheckCircle2, Eye, Crop, MonitorSmartphone, StretchHorizontal, Timer, Plus, Trash2, Droplets, Palette, Sun, Zap, CircleDashed, Pipette, Type, AlignCenter, AlignLeft, AlignRight, Mountain, RotateCw, Layers, Minus, Triangle, PenTool, Eraser } from 'lucide-react';
 import { detectMaskableObjects, analyzeReframeFocus, generateExtendedFrames } from '../services/geminiService';
 
 interface InspectorProps {
@@ -35,6 +35,11 @@ const AVAILABLE_EFFECTS: { type: VisualEffectType; name: string; icon: any }[] =
     { type: 'hue', name: 'Psychedelic', icon: Zap },
     { type: 'invert', name: 'Negative', icon: CircleDashed },
     { type: 'vignette', name: 'Vignette', icon: CircleDashed },
+    { type: 'rgbShift', name: 'RGB Shift', icon: Layers },
+    { type: 'scanLines', name: 'Scan Lines', icon: Minus },
+    { type: 'sharpen', name: 'Sharpen', icon: Triangle },
+    { type: 'sketch', name: 'Sketch', icon: PenTool },
+    { type: 'spotRemover', name: 'Spot Remover', icon: Eraser },
 ];
 
 const TRANSITIONS: { type: TransitionType; name: string }[] = [
@@ -237,7 +242,6 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
           </div>
         </div>
 
-        {/* Text Tools */}
         {clip.type === 'text' && (
             <div className="mb-6">
                 <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -281,7 +285,6 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
             </div>
         )}
 
-        {/* General Transform Tools */}
         <div className="mb-6">
           <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
             <Wand2 size={14} /> Transform
@@ -297,9 +300,16 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
             <Slider 
               label="Scale" 
               value={clip.properties.scale ?? 100} 
-              min={10} max={300} 
+              min={10} max={500} 
               onChange={(v: number) => updateProp('scale', v)} 
               unit="%"
+            />
+             <Slider 
+              label="Rotation" 
+              value={clip.properties.rotation ?? 0} 
+              min={0} max={360} 
+              onChange={(v: number) => updateProp('rotation', v)} 
+              unit="°"
             />
             <div className="grid grid-cols-2 gap-4">
                  <Slider 
@@ -318,7 +328,33 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
           </div>
         </div>
 
-        {/* Transitions Section */}
+         {(clip.type === 'video' || clip.type === 'audio') && (
+            <div className="mb-6">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <Timer size={14} /> Timing
+                </h3>
+                <div className="bg-gray-800/50 rounded-lg p-3 border border-gray-700/50">
+                    <Slider 
+                        label="Speed"
+                        value={clip.properties.speed ?? 1}
+                        min={0.25} max={4} step={0.25}
+                        onChange={(v: number) => updateProp('speed', v)}
+                        unit="x"
+                    />
+                    <div className="flex items-center justify-between mt-4">
+                        <label htmlFor="reverse-toggle" className="text-sm text-gray-300 flex items-center gap-2"><RotateCw size={12}/> Reverse</label>
+                        <button 
+                            id="reverse-toggle"
+                            onClick={() => updateProp('reversed', !clip.properties.reversed)}
+                            className={`w-10 h-5 rounded-full transition-colors flex items-center p-1 ${clip.properties.reversed ? 'bg-violet-500 justify-end' : 'bg-gray-700 justify-start'}`}
+                        >
+                            <div className="w-3 h-3 bg-white rounded-full shadow-md"></div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
         {(clip.type === 'video' || clip.type === 'image' || clip.type === 'text') && (
             <div className="mb-6">
                 <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -356,10 +392,8 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
             </div>
         )}
 
-        {/* Video / Image Tools */}
         {(clip.type === 'video' || clip.type === 'image') && (
           <>
-             {/* Smart Reframe Section */}
              <div className="mb-6">
                 <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2 text-pink-400">
                     <Crop size={14} /> Smart Reframe
@@ -383,7 +417,6 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
                 </div>
              </div>
 
-             {/* Smart Extend Section */}
              <div className="mb-6">
                  <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2 text-emerald-400">
                      <StretchHorizontal size={14} /> Smart Extend
@@ -427,7 +460,6 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
                  </div>
              </div>
 
-             {/* Magic Mask Section */}
              <div className="mb-6">
                 <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2 text-violet-300">
                     <ScanFace size={14} /> Magic Mask
@@ -628,7 +660,6 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
           </>
         )}
 
-        {/* Audio Tools */}
         {(clip.type === 'audio' || clip.type === 'video') && (
           <div className="mb-6">
             <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-2">

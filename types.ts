@@ -16,7 +16,7 @@ export interface MediaAsset {
   thumbnail?: string;
 }
 
-export type VisualEffectType = 'blur' | 'sepia' | 'grayscale' | 'invert' | 'hue' | 'vignette';
+export type VisualEffectType = 'blur' | 'sepia' | 'grayscale' | 'invert' | 'hue' | 'vignette' | 'rgbShift' | 'scanLines' | 'sharpen' | 'sketch' | 'spotRemover';
 
 export interface VisualEffect {
   id: string;
@@ -45,6 +45,7 @@ export interface ClipProperties {
   // Video & General
   opacity?: number;
   scale?: number;
+  rotation?: number; // 0-360 degrees
   position?: { x: number; y: number }; // Percentage offset (-50 to 50)
   brightness?: number;
   contrast?: number;
@@ -58,6 +59,10 @@ export interface ClipProperties {
   // Audio
   volume?: number;
   pan?: number;
+
+  // Timing
+  speed?: number; // playback speed multiplier e.g., 1, 2, 0.5
+  reversed?: boolean;
 
   // AI Magic Mask
   detectedObjects?: string[];

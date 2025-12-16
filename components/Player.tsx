@@ -48,9 +48,10 @@ const AudioTrackPlayer: React.FC<{ clip: Clip; projectState: ProjectState }> = (
             setupAudioNode(audio);
         }
 
+        audio.playbackRate = clip.properties.speed || 1;
         const targetTime = projectState.currentTime - clip.startOffset + clip.sourceStart;
         
-        if (projectState.isPlaying) {
+        if (projectState.isPlaying && !clip.properties.reversed) {
             if (Math.abs(audio.currentTime - targetTime) > 0.25) audio.currentTime = targetTime;
             if (audio.paused) audio.play().catch(() => {});
         } else {
@@ -62,7 +63,7 @@ const AudioTrackPlayer: React.FC<{ clip: Clip; projectState: ProjectState }> = (
         const anySolo = projectState.tracks.some(t => t.isSolo);
         const isMuted = track ? (track.isMuted || (anySolo && !track.isSolo)) : false;
 
-        audio.volume = isMuted ? 0 : Math.min(1, Math.max(0, (clip.properties.volume ?? 100) / 100));
+        audio.volume = isMuted || clip.properties.reversed ? 0 : Math.min(1, Math.max(0, (clip.properties.volume ?? 100) / 100));
 
         const nodes = audioNodes.get(audio);
         if (nodes && audioContext) {
@@ -90,7 +91,8 @@ export const Player: React.FC<PlayerProps> = ({ projectState, onTogglePlay, onSe
                projectState.currentTime >= c.startOffset && 
                projectState.currentTime < c.startOffset + c.duration;
       })
-      .sort((a, b) => trackOrder.indexOf(a.trackId) - trackOrder.indexOf(b.trackId));
+      .sort((a, b) => trackOrder.indexOf(b.trackId) - trackOrder.indexOf(a.trackId)) // Render top tracks last
+      .reverse();
   };
 
   const getActiveTextClips = (): Clip[] => {
@@ -107,7 +109,7 @@ export const Player: React.FC<PlayerProps> = ({ projectState, onTogglePlay, onSe
   const getAudibleOnlyClips = (visualClipIds: Set<string>): Clip[] => {
       return projectState.clips.filter(c => 
           !visualClipIds.has(c.id) &&
-          c.type === 'audio' &&
+          (c.type === 'audio' || c.type === 'video') &&
           projectState.currentTime >= c.startOffset && 
           projectState.currentTime < c.startOffset + c.duration
       );
@@ -127,25 +129,35 @@ export const Player: React.FC<PlayerProps> = ({ projectState, onTogglePlay, onSe
           setupAudioNode(video);
       }
       
-      let targetTime = projectState.currentTime - clip.startOffset + clip.sourceStart;
-      
-      if (projectState.isPlaying) {
-          if (Math.abs(video.currentTime - targetTime) > 0.25) video.currentTime = targetTime;
-          if (video.paused) video.play().catch(() => {});
-      } else {
+      const props = clip.properties;
+
+      // Handle timing: speed and reverse
+      if (props.reversed) {
           video.pause();
-          if (Math.abs(video.currentTime - targetTime) > 0.05) video.currentTime = targetTime;
+          const timeFromClipEnd = (clip.startOffset + clip.duration) - projectState.currentTime;
+          const targetSourceTime = clip.sourceStart + timeFromClipEnd;
+          video.currentTime = Math.max(clip.sourceStart, Math.min(targetSourceTime, clip.sourceStart + clip.duration));
+      } else {
+          video.playbackRate = props.speed || 1;
+          const targetTime = projectState.currentTime - clip.startOffset + clip.sourceStart;
+          if (projectState.isPlaying) {
+              if (Math.abs(video.currentTime - targetTime) > 0.25) video.currentTime = targetTime;
+              if (video.paused) video.play().catch(() => {});
+          } else {
+              video.pause();
+              if (Math.abs(video.currentTime - targetTime) > 0.05) video.currentTime = targetTime;
+          }
       }
 
       const track = projectState.tracks.find(t => t.id === clip.trackId);
       const anySolo = projectState.tracks.some(t => t.isSolo);
       const isMuted = track ? (track.isMuted || (anySolo && !track.isSolo)) : false;
 
-      video.volume = isMuted ? 0 : Math.min(1, Math.max(0, (clip.properties.volume ?? 100) / 100));
+      video.volume = isMuted || props.reversed ? 0 : Math.min(1, Math.max(0, (props.volume ?? 100) / 100));
 
       const nodes = audioNodes.get(video);
       if (nodes && audioContext) {
-          const panValue = (clip.properties.pan ?? 0) / 50;
+          const panValue = (props.pan ?? 0) / 50;
           nodes.panner.pan.setValueAtTime(panValue, audioContext.currentTime);
       }
     });
@@ -192,52 +204,9 @@ export const Player: React.FC<PlayerProps> = ({ projectState, onTogglePlay, onSe
       }
   };
 
-  const getFilterString = (clip: Clip, forChroma: boolean = false) => {
-    const { brightness, contrast, saturation, effects, chromaKey } = clip.properties;
-    let filter = '';
-    
-    if (forChroma) {
-        // Only apply tolerance filter to the video for chroma keying
-        return `contrast(${1 + ((chromaKey?.tolerance || 0) / 25)})`;
-    }
-
-    // Base color grading
-    filter += `brightness(${1 + (brightness || 0)/100}) contrast(${1 + (contrast || 0)/100}) saturate(${(saturation || 100)/100})`;
-
-    // Standard effects
-    if (effects) {
-        effects.forEach(e => {
-            switch(e.type) {
-                case 'blur': filter += ` blur(${e.intensity / 5}px)`; break;
-                case 'sepia': filter += ` sepia(${e.intensity / 100})`; break;
-                case 'grayscale': filter += ` grayscale(${e.intensity / 100})`; break;
-                case 'invert': filter += ` invert(${e.intensity / 100})`; break;
-                case 'hue': filter += ` hue-rotate(${e.intensity * 3.6}deg)`; break;
-            }
-        });
-    }
-
-    // Chroma key related filters applied to the container
-    if (chromaKey?.enabled) {
-        const feather = chromaKey.feather || 0;
-        const shadow = chromaKey.shadow || 0;
-        if (feather > 0) filter += ` blur(${feather / 30}px)`;
-        if (shadow > 0) filter += ` drop-shadow(0px ${shadow / 10}px ${shadow / 5}px rgba(0,0,0,${shadow / 125}))`;
-    }
-    
-    return filter;
-  };
-  
-  const getMergedTransform = (clip: Clip) => {
+  const getBaseTransform = (clip: Clip) => {
     const props = clip.properties;
-    const chroma = props.chromaKey;
-    const distance = chroma?.enabled ? (chroma.distance || 0) : 0;
-    
-    const base = `scale(${(props.scale || 100) / 100}) translate(${props.position?.x || 0}%, ${props.position?.y || 0}%)`;
-    const transitionTransform = getTransitionStyle(clip).transform || '';
-    const distanceTransform = `scale(${1 - (distance / 2000)}) translateY(-${distance / 10}%)`;
-
-    return `${base} ${transitionTransform} ${distanceTransform}`;
+    return `scale(${(props.scale || 100) / 100}) translate(${props.position?.x || 0}%, ${props.position?.y || 0}%) rotateZ(${props.rotation || 0}deg)`;
   };
 
   return (
@@ -248,23 +217,18 @@ export const Player: React.FC<PlayerProps> = ({ projectState, onTogglePlay, onSe
             className={`relative bg-black shadow-2xl overflow-hidden transition-all duration-300 border border-gray-800 ${projectState.aspectRatio === '16:9' ? 'w-full h-full' : ''}`}
             style={projectState.aspectRatio === '16:9' ? {} : getAspectRatioStyle()}
         >
-            {activeVisualClips.length === 0 ? (
+            {activeVisualClips.length === 0 && (
                 <div className="text-gray-700 flex flex-col items-center h-full justify-center">
                     <div className="w-16 h-16 border-2 border-gray-800 rounded-full flex items-center justify-center mb-4">
                         <Play className="ml-1 opacity-20" size={32} />
                     </div>
                     <p>No Signal</p>
                 </div>
-            ) : (
-                activeVisualClips.map((clip, index) => {
+            )}
+            <div className="absolute inset-0 w-full h-full">
+                {activeVisualClips.map((clip, index) => {
                     const props = clip.properties;
                     const transitionStyle = getTransitionStyle(clip);
-                    
-                    const isExtendedFrame = props.aiExtendedDuration && 
-                        (projectState.currentTime > (clip.startOffset + clip.duration - props.aiExtendedDuration));
-                    
-                    const hasVignette = props.effects?.some(e => e.type === 'vignette');
-                    const vignetteIntensity = props.effects?.find(e => e.type === 'vignette')?.intensity || 0;
                     const chroma = props.chromaKey;
 
                     const setVideoRef = (el: HTMLVideoElement | null) => {
@@ -272,30 +236,77 @@ export const Player: React.FC<PlayerProps> = ({ projectState, onTogglePlay, onSe
                         else videoElementsRef.current.delete(clip.id);
                     };
 
-                    const clipTransform = getMergedTransform(clip);
-                    const clipFilter = getFilterString(clip);
+                    const baseTransform = getBaseTransform(clip);
+                    const transitionTransform = transitionStyle.transform || '';
+                    const distance = chroma?.enabled ? (chroma.distance || 0) : 0;
+                    const distanceTransform = `scale(${1 - (distance / 2000)}) translateY(-${distance / 10}%)`;
+                    const finalTransform = `${baseTransform} ${distanceTransform} ${transitionTransform}`;
 
-                    const content = clip.type === 'video' ? (
-                        <video
-                            ref={setVideoRef}
-                            src={clip.src}
-                            className="w-full h-full object-cover"
-                            style={{
-                                objectFit: projectState.aspectRatio === '16:9' ? 'contain' : 'cover',
-                                filter: chroma?.enabled ? getFilterString(clip, true) : undefined,
-                                mixBlendMode: chroma?.enabled ? 'difference' : 'normal',
-                            }}
-                            playsInline crossOrigin="anonymous"
-                        />
+                    let preKeyingFilter = `brightness(${1 + (props.brightness || 0)/100}) contrast(${1 + (props.contrast || 0)/100}) saturate(${(props.saturation || 100)/100})`;
+                    if (props.effects) {
+                        props.effects.forEach(e => {
+                            if (e.type !== 'vignette' && e.type !== 'scanLines') {
+                                const i = e.intensity;
+                                switch(e.type) {
+                                    case 'blur': preKeyingFilter += ` blur(${i / 5}px)`; break;
+                                    case 'sepia': preKeyingFilter += ` sepia(${i / 100})`; break;
+                                    case 'grayscale': preKeyingFilter += ` grayscale(${i / 100})`; break;
+                                    case 'invert': preKeyingFilter += ` invert(${i / 100})`; break;
+                                    case 'hue': preKeyingFilter += ` hue-rotate(${i * 3.6}deg)`; break;
+                                    case 'sharpen': preKeyingFilter += ` contrast(${1 + i/50})`; break;
+                                    case 'sketch': preKeyingFilter += ` grayscale(1) contrast(${1 + i/10})`; break;
+                                    case 'spotRemover': preKeyingFilter += ` blur(${i/25}px) contrast(${1 - i/200})`; break;
+                                    case 'rgbShift': 
+                                        const offset = i / 20;
+                                        preKeyingFilter += ` drop-shadow(${offset}px 0 0 #ff0000) drop-shadow(-${offset}px 0 0 #00ffff)`;
+                                        break;
+                                }
+                            }
+                        });
+                    }
+                    if (chroma?.enabled) {
+                        preKeyingFilter += ` contrast(${1 + ((chroma.tolerance || 0) / 25)})`;
+                    }
+
+                    let postKeyingFilter = '';
+                    if (chroma?.enabled) {
+                        if (chroma.feather > 0) postKeyingFilter += ` blur(${chroma.feather / 30}px)`;
+                        if (chroma.shadow > 0) postKeyingFilter += ` drop-shadow(0px ${chroma.shadow / 10}px ${chroma.shadow / 5}px rgba(0,0,0,${chroma.shadow / 125}))`;
+                    }
+                    
+                    const isExtendedFrame = props.aiExtendedDuration && 
+                        (projectState.currentTime > (clip.startOffset + clip.duration - props.aiExtendedDuration));
+                    const hasVignette = props.effects?.some(e => e.type === 'vignette');
+                    const vignetteIntensity = props.effects?.find(e => e.type === 'vignette')?.intensity || 0;
+                    const hasScanLines = props.effects?.some(e => e.type === 'scanLines');
+                    const scanLinesIntensity = props.effects?.find(e => e.type === 'scanLines')?.intensity || 50;
+
+
+                    const mediaStyle: React.CSSProperties = {
+                        width: '100%',
+                        height: '100%',
+                        objectFit: projectState.aspectRatio === '16:9' ? 'contain' : 'cover',
+                        filter: preKeyingFilter,
+                        mixBlendMode: chroma?.enabled ? 'difference' : 'normal',
+                    };
+
+                    const mediaElement = clip.type === 'video' ? (
+                        <video ref={setVideoRef} src={clip.src} style={mediaStyle} playsInline crossOrigin="anonymous" />
                     ) : (
-                        <img 
-                            src={clip.src} alt={clip.name} className="w-full h-full object-cover" 
-                            style={{
-                                objectFit: projectState.aspectRatio === '16:9' ? 'contain' : 'cover',
-                                filter: chroma?.enabled ? getFilterString(clip, true) : undefined,
-                                mixBlendMode: chroma?.enabled ? 'difference' : 'normal',
-                            }}
-                        />
+                        <img src={clip.src} alt={clip.name} style={mediaStyle} />
+                    );
+                    
+                    const content = chroma?.enabled ? (
+                        <div style={{
+                            backgroundColor: chroma.keyColor,
+                            mixBlendMode: 'screen',
+                            width: '100%',
+                            height: '100%',
+                        }}>
+                            {mediaElement}
+                        </div>
+                    ) : (
+                        mediaElement
                     );
 
                     return (
@@ -304,24 +315,16 @@ export const Player: React.FC<PlayerProps> = ({ projectState, onTogglePlay, onSe
                             className="absolute inset-0 w-full h-full"
                             style={{ 
                                 zIndex: index,
-                                transform: clipTransform,
+                                transform: finalTransform,
                                 clipPath: transitionStyle.clipPath,
+                                opacity: ((props.opacity ?? 100) / 100) * (transitionStyle.opacity ?? 1),
+                                filter: postKeyingFilter,
                             }}
                         >
-                            <div
-                                className="w-full h-full"
-                                style={{
-                                    opacity: ((props.opacity ?? 100) / 100) * (transitionStyle.opacity ?? 1),
-                                    filter: clipFilter,
-                                    mixBlendMode: chroma?.enabled ? 'screen' : 'normal',
-                                    backgroundColor: chroma?.enabled ? chroma.keyColor : 'transparent',
-                                }}
-                            >
-                                {content}
-                            </div>
+                            {content}
                             
-                            {/* Per-Clip Overlays (positioned relative to the transformed clip) */}
                             {hasVignette && <div className="absolute inset-0 pointer-events-none" style={{background: `radial-gradient(circle, transparent ${100 - vignetteIntensity}%, black 150%)`}} />}
+                            {hasScanLines && <div className="absolute inset-0 pointer-events-none opacity-20" style={{background: `repeating-linear-gradient(transparent 0, rgba(0,0,0,${scanLinesIntensity/100}) 3px, transparent 4px)`}} />}
                             {isExtendedFrame && (
                                 <div className="absolute top-4 right-4 bg-emerald-900/80 border border-emerald-500/50 backdrop-blur-sm text-emerald-100 px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 shadow-lg animate-pulse">
                                     <Sparkles size={12} className="text-emerald-400" /> AI Generated
@@ -339,26 +342,25 @@ export const Player: React.FC<PlayerProps> = ({ projectState, onTogglePlay, onSe
                             )}
                         </div>
                     );
-                })
-            )}
+                })}
+            </div>
 
-            {/* Text Overlays on top of all visual clips */}
             <div className="absolute inset-0 pointer-events-none" style={{ zIndex: activeVisualClips.length }}>
                 {activeTextClips.map(clip => {
                     const props = clip.properties;
                     const transition = getTransitionStyle(clip);
+                    const baseTransform = getBaseTransform(clip);
                     return (
                         <div
                             key={clip.id}
                             className="absolute p-4 box-border w-full h-full flex justify-center items-center"
                             style={{
                                 opacity: ((props.opacity ?? 100) / 100) * (transition.opacity ?? 1),
-                                ...transition
                             }}
                         >
                             <div
                                 style={{
-                                    transform: getMergedTransform(clip),
+                                    transform: `${baseTransform} ${transition.transform || ''}`,
                                     color: props.fontColor || '#FFFFFF',
                                     fontSize: `${props.fontSize || 24}px`,
                                     fontWeight: props.fontWeight || 'normal',
