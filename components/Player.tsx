@@ -192,9 +192,19 @@ export const Player: React.FC<PlayerProps> = ({ projectState, onTogglePlay, onSe
       }
   };
 
-  const getFilterString = (clip: Clip) => {
-    const { brightness, contrast, saturation, effects } = clip.properties;
-    let filter = `brightness(${1 + (brightness || 0)/100}) contrast(${1 + (contrast || 0)/100}) saturate(${(saturation || 100)/100})`;
+  const getFilterString = (clip: Clip, forChroma: boolean = false) => {
+    const { brightness, contrast, saturation, effects, chromaKey } = clip.properties;
+    let filter = '';
+    
+    if (forChroma) {
+        // Only apply tolerance filter to the video for chroma keying
+        return `contrast(${1 + ((chromaKey?.tolerance || 0) / 25)})`;
+    }
+
+    // Base color grading
+    filter += `brightness(${1 + (brightness || 0)/100}) contrast(${1 + (contrast || 0)/100}) saturate(${(saturation || 100)/100})`;
+
+    // Standard effects
     if (effects) {
         effects.forEach(e => {
             switch(e.type) {
@@ -206,13 +216,28 @@ export const Player: React.FC<PlayerProps> = ({ projectState, onTogglePlay, onSe
             }
         });
     }
+
+    // Chroma key related filters applied to the container
+    if (chromaKey?.enabled) {
+        const feather = chromaKey.feather || 0;
+        const shadow = chromaKey.shadow || 0;
+        if (feather > 0) filter += ` blur(${feather / 30}px)`;
+        if (shadow > 0) filter += ` drop-shadow(0px ${shadow / 10}px ${shadow / 5}px rgba(0,0,0,${shadow / 125}))`;
+    }
+    
     return filter;
   };
   
   const getMergedTransform = (clip: Clip) => {
-    const base = `scale(${(clip.properties.scale || 100) / 100}) translate(${clip.properties.position?.x || 0}%, ${clip.properties.position?.y || 0}%)`;
-    const transitionTransform = getTransitionStyle(clip).transform;
-    return transitionTransform ? `${base} ${transitionTransform}` : base;
+    const props = clip.properties;
+    const chroma = props.chromaKey;
+    const distance = chroma?.enabled ? (chroma.distance || 0) : 0;
+    
+    const base = `scale(${(props.scale || 100) / 100}) translate(${props.position?.x || 0}%, ${props.position?.y || 0}%)`;
+    const transitionTransform = getTransitionStyle(clip).transform || '';
+    const distanceTransform = `scale(${1 - (distance / 2000)}) translateY(-${distance / 10}%)`;
+
+    return `${base} ${transitionTransform} ${distanceTransform}`;
   };
 
   return (
@@ -238,9 +263,6 @@ export const Player: React.FC<PlayerProps> = ({ projectState, onTogglePlay, onSe
                     const isExtendedFrame = props.aiExtendedDuration && 
                         (projectState.currentTime > (clip.startOffset + clip.duration - props.aiExtendedDuration));
                     
-                    let filter = getFilterString(clip);
-                    if (isExtendedFrame) filter += ` sepia(0.3) grayscale(0.2)`;
-                    
                     const hasVignette = props.effects?.some(e => e.type === 'vignette');
                     const vignetteIntensity = props.effects?.find(e => e.type === 'vignette')?.intensity || 0;
                     const chroma = props.chromaKey;
@@ -250,47 +272,55 @@ export const Player: React.FC<PlayerProps> = ({ projectState, onTogglePlay, onSe
                         else videoElementsRef.current.delete(clip.id);
                     };
 
+                    const clipTransform = getMergedTransform(clip);
+                    const clipFilter = getFilterString(clip);
+
+                    const content = clip.type === 'video' ? (
+                        <video
+                            ref={setVideoRef}
+                            src={clip.src}
+                            className="w-full h-full object-cover"
+                            style={{
+                                objectFit: projectState.aspectRatio === '16:9' ? 'contain' : 'cover',
+                                filter: chroma?.enabled ? getFilterString(clip, true) : undefined,
+                                mixBlendMode: chroma?.enabled ? 'difference' : 'normal',
+                            }}
+                            playsInline crossOrigin="anonymous"
+                        />
+                    ) : (
+                        <img 
+                            src={clip.src} alt={clip.name} className="w-full h-full object-cover" 
+                            style={{
+                                objectFit: projectState.aspectRatio === '16:9' ? 'contain' : 'cover',
+                                filter: chroma?.enabled ? getFilterString(clip, true) : undefined,
+                                mixBlendMode: chroma?.enabled ? 'difference' : 'normal',
+                            }}
+                        />
+                    );
+
                     return (
                         <div 
                             key={clip.id} 
                             className="absolute inset-0 w-full h-full"
                             style={{ 
                                 zIndex: index,
-                                opacity: ((props.opacity ?? 100) / 100) * (transitionStyle.opacity ?? 1),
+                                transform: clipTransform,
                                 clipPath: transitionStyle.clipPath,
-                                mixBlendMode: chroma?.enabled ? 'screen' : 'normal',
                             }}
                         >
-                           <div 
-                               className="w-full h-full"
-                               style={{ transform: getMergedTransform(clip), filter }}
+                            <div
+                                className="w-full h-full"
+                                style={{
+                                    opacity: ((props.opacity ?? 100) / 100) * (transitionStyle.opacity ?? 1),
+                                    filter: clipFilter,
+                                    mixBlendMode: chroma?.enabled ? 'screen' : 'normal',
+                                    backgroundColor: chroma?.enabled ? chroma.keyColor : 'transparent',
+                                }}
                             >
-                                {chroma?.enabled && (
-                                    <div className="absolute inset-0 w-full h-full" style={{ backgroundColor: chroma.keyColor }}></div>
-                                )}
-                                {clip.type === 'video' ? (
-                                    <video
-                                        ref={setVideoRef}
-                                        src={clip.src}
-                                        className="w-full h-full object-cover"
-                                        style={{ 
-                                            objectFit: projectState.aspectRatio === '16:9' ? 'contain' : 'cover',
-                                            mixBlendMode: chroma?.enabled ? 'difference' : 'normal',
-                                        }}
-                                        playsInline crossOrigin="anonymous"
-                                    />
-                                ) : (
-                                    <img 
-                                        src={clip.src} alt={clip.name} className="w-full h-full object-cover" 
-                                        style={{ 
-                                            objectFit: projectState.aspectRatio === '16:9' ? 'contain' : 'cover',
-                                            mixBlendMode: chroma?.enabled ? 'difference' : 'normal',
-                                        }}
-                                    />
-                                )}
+                                {content}
                             </div>
                             
-                             {/* Per-Clip Overlays */}
+                            {/* Per-Clip Overlays (positioned relative to the transformed clip) */}
                             {hasVignette && <div className="absolute inset-0 pointer-events-none" style={{background: `radial-gradient(circle, transparent ${100 - vignetteIntensity}%, black 150%)`}} />}
                             {isExtendedFrame && (
                                 <div className="absolute top-4 right-4 bg-emerald-900/80 border border-emerald-500/50 backdrop-blur-sm text-emerald-100 px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 shadow-lg animate-pulse">

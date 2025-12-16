@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Clip, VisualEffect, VisualEffectType, ChromaKey, TransitionType } from '../types';
-import { Sliders, Aperture, Music2, Wand2, X, ScanFace, Loader2, CheckCircle2, Eye, Crop, MonitorSmartphone, StretchHorizontal, Timer, Plus, Trash2, Droplets, Palette, Sun, Zap, CircleDashed, Pipette, Type, AlignCenter, AlignLeft, AlignRight } from 'lucide-react';
+import { Sliders, Aperture, Music2, Wand2, X, ScanFace, Loader2, CheckCircle2, Eye, Crop, MonitorSmartphone, StretchHorizontal, Timer, Plus, Trash2, Droplets, Palette, Sun, Zap, CircleDashed, Pipette, Type, AlignCenter, AlignLeft, AlignRight, Mountain } from 'lucide-react';
 import { detectMaskableObjects, analyzeReframeFocus, generateExtendedFrames } from '../services/geminiService';
 
 interface InspectorProps {
@@ -72,7 +72,7 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
   };
   
   const updateChromaKeyProp = (key: keyof ChromaKey, value: any) => {
-      const currentChromaKey = clip.properties.chromaKey || { enabled: false, keyColor: '#00ff00', tolerance: 20, feather: 10 };
+      const currentChromaKey = clip.properties.chromaKey || { enabled: false, keyColor: '#00ff00', tolerance: 20, feather: 10, distance: 0, shadow: 0 };
       updateProp('chromaKey', { ...currentChromaKey, [key]: value });
   };
 
@@ -213,7 +213,7 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
     }
   };
 
-  const chroma = clip.properties.chromaKey || { enabled: false, keyColor: '#00ff00', tolerance: 20, feather: 10 };
+  const chroma = clip.properties.chromaKey || { enabled: false, keyColor: '#00ff00', tolerance: 20, feather: 10, distance: 0, shadow: 0 };
 
   return (
     <div className="w-full md:w-80 bg-gray-900 border-l border-gray-800 flex flex-col h-full z-20 shadow-xl">
@@ -343,19 +343,13 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
                         <>
                             <Slider
                                 label="Duration"
-                                value={clip.transition.duration.toFixed(1)}
+                                value={parseFloat((clip.transition.duration || 1.0).toFixed(1))}
                                 min={0.1}
                                 max={3}
                                 step={0.1}
                                 onChange={handleTransitionDurationChange}
                                 unit="s"
                             />
-                            <button
-                                onClick={handleRemoveTransition}
-                                className="w-full mt-2 text-xs text-red-400 hover:bg-red-900/50 p-2 rounded flex items-center justify-center gap-2 transition-colors"
-                            >
-                                <Trash2 size={14} /> Remove Transition
-                            </button>
                         </>
                     )}
                 </div>
@@ -528,6 +522,18 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
                                 value={chroma.feather}
                                 min={0} max={100}
                                 onChange={(v: number) => updateChromaKeyProp('feather', v)}
+                            />
+                             <Slider 
+                                label="Distance"
+                                value={chroma.distance ?? 0}
+                                min={0} max={100}
+                                onChange={(v: number) => updateChromaKeyProp('distance', v)}
+                            />
+                             <Slider 
+                                label="Shadow"
+                                value={chroma.shadow ?? 0}
+                                min={0} max={100}
+                                onChange={(v: number) => updateChromaKeyProp('shadow', v)}
                             />
                         </>
                     )}

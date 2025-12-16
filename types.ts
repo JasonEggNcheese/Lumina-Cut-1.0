@@ -37,6 +37,8 @@ export interface ChromaKey {
   keyColor: string; // hex color e.g. #00ff00
   tolerance: number; // 0-100
   feather: number; // 0-100
+  distance?: number; // 0-100
+  shadow?: number; // 0-100
 }
 
 export interface ClipProperties {
@@ -91,7 +93,7 @@ export interface Clip {
 }
 
 export interface Track {
-  id: string;
+  id:string;
   type: TrackType;
   name: string;
   isMuted: boolean;
