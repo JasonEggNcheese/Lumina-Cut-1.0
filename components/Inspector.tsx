@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Clip, VisualEffect, VisualEffectType, ChromaKey, TransitionType, EqualizerSettings } from '../types';
-import { Sliders, Aperture, Music2, Wand2, X, ScanFace, Loader2, CheckCircle2, Eye, Crop, MonitorSmartphone, StretchHorizontal, Timer, Plus, Trash2, Droplets, Palette, Sun, Zap, CircleDashed, Pipette, Type, AlignCenter, AlignLeft, AlignRight, Mountain, RotateCw, Layers, Minus, Triangle, PenTool, Eraser, SlidersHorizontal, RotateCcw, ChevronDown } from 'lucide-react';
+import { Sliders, Aperture, Music2, Wand2, X, ScanFace, Loader2, CheckCircle2, Eye, Crop, MonitorSmartphone, StretchHorizontal, Timer, Plus, Trash2, Droplets, Palette, Sun, Zap, CircleDashed, Pipette, Type, AlignCenter, AlignLeft, AlignRight, Mountain, RotateCw, Layers, Minus, Triangle, PenTool, Eraser, SlidersHorizontal, RotateCcw, ChevronDown, Scissors } from 'lucide-react';
 import { detectMaskableObjects, analyzeReframeFocus, generateExtendedFrames } from '../services/geminiService';
 
 interface InspectorProps {
@@ -8,6 +8,7 @@ interface InspectorProps {
   onUpdateClip: (id: string, updates: Partial<Clip>) => void;
   onClose: () => void;
   projectAspectRatio: string;
+  onDetachAudio: (clipId: string) => void;
 }
 
 // --- Collapsible Section Component ---
@@ -154,7 +155,7 @@ const TRANSITIONS: { type: TransitionType; name: string }[] = [
   { type: 'dissolve', name: 'Glitch' },
 ];
 
-export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClose, projectAspectRatio }) => {
+export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClose, projectAspectRatio, onDetachAudio }) => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isReframing, setIsReframing] = useState(false);
   const [isExtending, setIsExtending] = useState(false);
@@ -186,6 +187,10 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
   const handleRemoveSmartExtend = () => { const ext = clip.properties.aiExtendedDuration || 0; if (ext === 0) return; onUpdateClip(clip.id, { duration: Math.max(0.5, clip.duration - ext), properties: { ...clip.properties, aiExtendedDuration: 0 } }); };
   const toggleMask = (obj: string) => { const newValue = clip.properties.activeMaskId === obj ? null : obj; updateProp('activeMaskId', newValue); if (newValue) { updateProp('maskOverlayVisible', true); } };
   const chroma = clip.properties.chromaKey || { enabled: false, keyColor: '#00ff00', tolerance: 20, feather: 10, distance: 0, shadow: 0 };
+
+  const handleDetachAudio = () => {
+    onDetachAudio(clip.id);
+  };
 
   return (
     <div className="w-full md:w-80 bg-gray-900 border-l border-gray-800 flex flex-col h-full z-20 shadow-xl">
@@ -279,6 +284,18 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
               <Slider label="Volume" value={clip.properties.volume ?? 100} min={0} max={200} onChange={(v: number) => updateProp('volume', v)} unit="%"/>
               <Slider label="Pan" value={clip.properties.pan ?? 0} min={-50} max={50} onChange={(v: number) => updateProp('pan', v)} />
               <div className="mt-4 pt-4 border-t border-gray-700 flex justify-between items-center"><span className="text-xs text-gray-400">Equalizer</span><button onClick={() => setShowEqPanel(true)} className="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded">Open EQ</button></div>
+              {clip.type === 'video' && (
+                  <div className="mt-4 pt-4 border-t border-gray-700">
+                      <button 
+                          onClick={handleDetachAudio} 
+                          disabled={clip.properties.audioSourceEnabled === false}
+                          className="w-full text-xs bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-700"
+                      >
+                          <Scissors size={14} /> 
+                          {clip.properties.audioSourceEnabled === false ? 'Audio Detached' : 'Detach Audio'}
+                      </button>
+                  </div>
+              )}
           </CollapsibleSection>
         )}
       </div>

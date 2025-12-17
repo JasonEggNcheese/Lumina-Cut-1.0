@@ -9,11 +9,45 @@ interface PlayerProps {
   playerRef: React.RefObject<HTMLDivElement>;
 }
 
+// Define a type for our custom window properties to keep TypeScript happy
+declare global {
+  interface Window {
+    _luminaAudioContext?: AudioContext | null;
+    _luminaAudioNodes?: WeakMap<HTMLMediaElement, any>;
+  }
+}
+
 const EQ_FREQUENCIES = [60, 250, 1000, 4000, 16000];
 
-// Global state for Web Audio API
-let audioContext: AudioContext | null = null;
-const audioNodes = new Map<HTMLMediaElement, { source: MediaElementAudioSourceNode, panner: StereoPannerNode, filters: BiquadFilterNode[] }>();
+// --- Robust Singleton AudioContext Management ---
+// Use true singletons attached to the window object to survive HMR (Hot Module Replacement)
+if (typeof window._luminaAudioContext === 'undefined') {
+    window._luminaAudioContext = null;
+}
+if (typeof window._luminaAudioNodes === 'undefined') {
+    window._luminaAudioNodes = new WeakMap();
+}
+const audioNodes: WeakMap<HTMLMediaElement, { source: MediaElementAudioSourceNode, panner: StereoPannerNode, filters: BiquadFilterNode[] }> = window._luminaAudioNodes;
+
+// Centralized getter to ensure a single AudioContext, handle creation, and resume from suspended state.
+const getAudioContext = (): AudioContext | null => {
+    if (!window._luminaAudioContext) {
+        try {
+            const newAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+            window._luminaAudioContext = newAudioContext;
+        } catch (e) {
+            console.error("Web Audio API is not supported.");
+            window._luminaAudioContext = null;
+        }
+    }
+    
+    if (window._luminaAudioContext && window._luminaAudioContext.state === 'suspended') {
+        window._luminaAudioContext.resume().catch(e => console.error("Error resuming AudioContext:", e));
+    }
+
+    return window._luminaAudioContext;
+}
+
 
 // --- Speed Ramping Logic ---
 // Function to get the speed at a certain progress point (0-1) along the clip
@@ -73,18 +107,8 @@ const calculateSourceTimeAtProgress = (progress: number, timelineDuration: numbe
     return sourceTime;
 };
 
-
-const initAudioContext = () => {
-    if (audioContext) return;
-    try {
-        audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-        if (audioContext.state === 'suspended') audioContext.resume();
-    } catch (e) {
-        console.error("Web Audio API is not supported.");
-    }
-};
-
 const setupAudioNode = (mediaElement: HTMLMediaElement) => {
+    const audioContext = getAudioContext();
     if (!audioContext || audioNodes.has(mediaElement)) return;
     try {
         const source = audioContext.createMediaElementSource(mediaElement);
@@ -113,6 +137,7 @@ const AudioTrackPlayer: React.FC<{ clip: Clip; projectState: ProjectState }> = (
     useEffect(() => {
         const audio = audioRef.current;
         if (!audio) return;
+        const audioContext = getAudioContext();
         if (audioContext && !audioNodes.has(audio)) setupAudioNode(audio);
         
         const props = clip.properties;
@@ -175,7 +200,7 @@ export const Player: React.FC<PlayerProps> = ({ projectState, onTogglePlay, onSe
                projectState.currentTime >= c.startOffset && 
                projectState.currentTime < c.startOffset + c.duration;
       })
-      .sort((a, b) => trackOrder.indexOf(a.trackId) - trackOrder.indexOf(b.trackId));
+      .sort((a, b) => trackOrder.indexOf(b.trackId) - trackOrder.indexOf(a.trackId));
   };
 
   const getActiveTextClips = (): Clip[] => {
@@ -202,6 +227,7 @@ export const Player: React.FC<PlayerProps> = ({ projectState, onTogglePlay, onSe
       if (clip.type !== 'video') return;
       const video = videoElementsRef.current.get(clip.id);
       if (!video) return;
+      const audioContext = getAudioContext();
       if (audioContext && !audioNodes.has(video)) setupAudioNode(video);
       
       const props = clip.properties;
@@ -234,7 +260,8 @@ export const Player: React.FC<PlayerProps> = ({ projectState, onTogglePlay, onSe
       const track = projectState.tracks.find(t => t.id === clip.trackId);
       const anySolo = projectState.tracks.some(t => t.isSolo);
       const isMuted = track ? (track.isMuted || (anySolo && !track.isSolo)) : false;
-      video.volume = isMuted || props.reversed || isRamping ? 0 : Math.min(1, Math.max(0, (props.volume ?? 100) / 100));
+      const audioEnabled = props.audioSourceEnabled !== false; // Default to true
+      video.volume = isMuted || props.reversed || isRamping || !audioEnabled ? 0 : Math.min(1, Math.max(0, (props.volume ?? 100) / 100));
 
       const nodes = audioNodes.get(video);
       if (nodes && audioContext) {
@@ -256,8 +283,7 @@ export const Player: React.FC<PlayerProps> = ({ projectState, onTogglePlay, onSe
   }, [projectState.currentTime, projectState.isPlaying, activeVisualClips, projectState.tracks]);
 
   const handleTogglePlay = () => {
-      initAudioContext();
-      if(audioContext && audioContext.state === 'suspended') audioContext.resume();
+      getAudioContext(); // Ensures context is created and resumed on first play
       onTogglePlay();
   }
 
@@ -370,7 +396,7 @@ export const Player: React.FC<PlayerProps> = ({ projectState, onTogglePlay, onSe
                     const hasScanLines = props.effects?.some(e => e.type === 'scanLines');
                     const scanLinesIntensity = props.effects?.find(e => e.type === 'scanLines')?.intensity || 50;
                     const mediaStyle: React.CSSProperties = { width: '100%', height: '100%', objectFit: projectState.aspectRatio === '16:9' ? 'contain' : 'cover', filter: preKeyingFilter, mixBlendMode: chroma?.enabled ? 'difference' : 'normal' };
-                    const mediaElement = clip.type === 'video' ? <video ref={setVideoRef} src={clip.src} style={mediaStyle} playsInline crossOrigin="anonymous" /> : <img src={clip.src} alt={clip.name} style={mediaStyle} />;
+                    const mediaElement = clip.type === 'video' ? <video key={clip.id} ref={setVideoRef} src={clip.src} style={mediaStyle} playsInline crossOrigin="anonymous" /> : <img key={clip.id} src={clip.src} alt={clip.name} style={mediaStyle} />;
                     const content = chroma?.enabled ? <div style={{ backgroundColor: chroma.keyColor, mixBlendMode: 'screen', width: '100%', height: '100%' }}>{mediaElement}</div> : mediaElement;
                     return (
                         <div key={clip.id} className="absolute inset-0 w-full h-full" style={{ zIndex: index, transform: finalTransform, clipPath: transitionStyle.clipPath, opacity: ((props.opacity ?? 100) / 100) * (transitionStyle.opacity ?? 1), filter: postKeyingFilter }}>
@@ -378,7 +404,59 @@ export const Player: React.FC<PlayerProps> = ({ projectState, onTogglePlay, onSe
                             {hasVignette && <div className="absolute inset-0 pointer-events-none" style={{background: `radial-gradient(circle, transparent ${100 - vignetteIntensity}%, black 150%)`}} />}
                             {hasScanLines && <div className="absolute inset-0 pointer-events-none opacity-20" style={{background: `repeating-linear-gradient(transparent 0, rgba(0,0,0,${scanLinesIntensity/100}) 3px, transparent 4px)`}} />}
                             {isExtendedFrame && <div className="absolute top-4 right-4 bg-emerald-900/80 border border-emerald-500/50 backdrop-blur-sm text-emerald-100 px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 shadow-lg animate-pulse"><Sparkles size={12} className="text-emerald-400" /> AI Generated</div>}
-                            {props.activeMaskId && props.maskOverlayVisible && !isExtendedFrame && <div className="absolute inset-0 pointer-events-none mix-blend-overlay"><div className="absolute bg-red-500/40 blur-xl rounded-full transition-all duration-300 ease-linear animate-pulse border-2 border-red-500/50" style={{ width: '30%', height: '40%', left: `${35 + Math.sin(projectState.currentTime) * 5}%`, top: `${25 + Math.cos(projectState.currentTime * 1.5) * 5}%` }}><div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-red-600 text-white text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap opacity-80 flex items-center gap-1"><ScanFace size={10} /> {props.activeMaskId}</div></div></div>}
+                            {props.activeMaskId && props.maskOverlayVisible && !isExtendedFrame && (() => {
+                                // Simple hash function to create deterministic "randomness" from the object name
+                                const stringToHash = (str: string) => {
+                                    let hash = 0;
+                                    for (let i = 0; i < str.length; i++) {
+                                        const char = str.charCodeAt(i);
+                                        hash = (hash << 5) - hash + char;
+                                        hash |= 0; // Convert to 32bit integer
+                                    }
+                                    return Math.abs(hash);
+                                };
+
+                                const hash = stringToHash(props.activeMaskId);
+
+                                // Use the hash to generate unique, deterministic animation parameters for each mask
+                                const xFreq = 1.1 + (hash % 100) / 100;      // Freq between 1.1 and 2.1
+                                const yFreq = 1.6 + (hash % 75) / 100;       // Freq between 1.6 and 2.35
+                                const xAmp = 4 + (hash % 10);              // Amplitude between 4 and 14
+                                const yAmp = 4 + ((hash >> 8) % 10);       // Amplitude between 4 and 14
+                                const xOffset = 35 + ((hash >> 16) % 10);  // Base offset between 35% and 45%
+                                const yOffset = 25 + ((hash >> 24) % 10);  // Base offset between 25% and 35%
+                                const hue = hash % 360;                    // Hue for color, 0-359
+
+                                const maskStyle: React.CSSProperties = {
+                                    width: '30%',
+                                    height: '40%',
+                                    left: `${xOffset + Math.sin(projectState.currentTime * xFreq) * xAmp}%`,
+                                    top: `${yOffset + Math.cos(projectState.currentTime * yFreq) * yAmp}%`,
+                                    backgroundColor: `hsla(${hue}, 70%, 60%, 0.4)`,
+                                    borderColor: `hsla(${hue}, 70%, 60%, 0.5)`,
+                                    boxShadow: `0 0 30px hsla(${hue}, 70%, 60%, 0.3)`
+                                };
+
+                                const labelStyle: React.CSSProperties = {
+                                    backgroundColor: `hsl(${hue}, 80%, 45%)`
+                                };
+
+                                return (
+                                    <div className="absolute inset-0 pointer-events-none mix-blend-plus-lighter">
+                                        <div 
+                                            className="absolute blur-xl rounded-full transition-all duration-500 ease-linear animate-pulse border-2" 
+                                            style={maskStyle}
+                                        >
+                                            <div 
+                                                className="absolute -top-6 left-1/2 -translate-x-1/2 text-white text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap opacity-90 flex items-center gap-1 shadow-lg"
+                                                style={labelStyle}
+                                            >
+                                                <ScanFace size={10} /> {props.activeMaskId}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                         </div>
                     );
                 })}

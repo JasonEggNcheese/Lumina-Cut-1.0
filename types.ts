@@ -1,4 +1,5 @@
 
+
 export enum TrackType {
   VIDEO = 'video',
   AUDIO = 'audio',
@@ -72,6 +73,7 @@ export interface ClipProperties {
   volume?: number;
   pan?: number;
   equalizer?: EqualizerSettings;
+  audioSourceEnabled?: boolean;
 
   // Timing
   speed?: number; // playback speed multiplier e.g., 1, 2, 0.5

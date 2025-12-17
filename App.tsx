@@ -13,7 +13,6 @@ import { Download, Sparkles, Layout, Clapperboard, Scissors, Wand2, Palette, Mus
 import html2canvas from 'html2canvas';
 import { exportProject } from './services/exportService';
 
-// Initial Mock Data
 const INITIAL_TRACKS: Track[] = [
   { id: 't1', type: TrackType.TEXT, name: 'Text', isMuted: false, isLocked: false, isSolo: false, isRecordArmed: false },
   { id: '1', type: TrackType.VIDEO, name: 'Video 1', isMuted: false, isLocked: false, isSolo: false, isRecordArmed: false },
@@ -64,11 +63,20 @@ const App: React.FC = () => {
                 setProject({ ...savedProject, isPlaying: false });
                 setAssets(savedAssets);
                 console.log("Project loaded from localStorage.");
+            } else {
+                 setProject(INITIAL_PROJECT_STATE);
+                 setAssets([]);
             }
         } catch (error) {
             console.error("Failed to load project from localStorage:", error);
-            // On failure, the app will proceed with the initial empty state.
+            setProject(INITIAL_PROJECT_STATE);
+            setAssets([]);
         }
+    } else {
+        // No saved data, start with a fresh project
+        setProject(INITIAL_PROJECT_STATE);
+        setAssets([]);
+        console.log("No saved project found. Starting a new project.");
     }
   }, []);
 
@@ -339,6 +347,51 @@ const App: React.FC = () => {
     });
   }, [clipboard, project.tracks, project.currentTime]);
 
+  const handleDetachAudio = (clipId: string) => {
+    const videoClip = project.clips.find(c => c.id === clipId);
+    if (!videoClip || videoClip.type !== 'video') return;
+
+    const audioTrack = project.tracks.find(t => t.type === TrackType.AUDIO);
+    if (!audioTrack) {
+        alert("No audio track available to detach audio to.");
+        return;
+    }
+
+    const newAudioClip: Clip = {
+        ...videoClip,
+        id: Math.random().toString(36).substr(2, 9),
+        type: 'audio',
+        trackId: audioTrack.id,
+        properties: { // Reset video-specific properties, keep audio ones
+            volume: videoClip.properties.volume ?? 100,
+            pan: videoClip.properties.pan ?? 0,
+            equalizer: videoClip.properties.equalizer,
+            speed: videoClip.properties.speed,
+            reversed: videoClip.properties.reversed,
+            speedRamp: videoClip.properties.speedRamp,
+        },
+        transition: undefined,
+        thumbnail: undefined,
+    };
+    
+    const updatedVideoClip = {
+        ...videoClip,
+        properties: {
+            ...videoClip.properties,
+            audioSourceEnabled: false,
+        }
+    };
+
+    setProject(p => ({
+        ...p,
+        clips: [
+            ...p.clips.filter(c => c.id !== clipId),
+            updatedVideoClip,
+            newAudioClip
+        ]
+    }));
+  };
+
   const handleStartExport = async (resolution: { width: number; height: number; name: string }) => {
     setIsExporting(true);
     setExportProgress(0);
@@ -466,7 +519,7 @@ const App: React.FC = () => {
             </div>
         </div>
         {showAiPanel && (<div className="fixed inset-0 z-50 md:static md:inset-auto md:z-auto"><AIAssistant onClose={() => setShowAiPanel(false)} /></div>)}
-        {showInspector && (<div className="fixed inset-0 z-40 md:static md:inset-auto md:z-auto"><Inspector clip={selectedClip} onUpdateClip={updateClip} onClose={() => setShowInspector(false)} projectAspectRatio={project.aspectRatio} /></div>)}
+        {showInspector && (<div className="fixed inset-0 z-40 md:static md:inset-auto md:z-auto"><Inspector clip={selectedClip} onUpdateClip={updateClip} onClose={() => setShowInspector(false)} projectAspectRatio={project.aspectRatio} onDetachAudio={handleDetachAudio} /></div>)}
         {showExportModal && 
             <ExportModal 
                 onClose={() => setShowExportModal(false)}

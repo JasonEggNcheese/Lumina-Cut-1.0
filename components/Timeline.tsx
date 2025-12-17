@@ -77,28 +77,59 @@ export const Timeline: React.FC<TimelineProps> = ({
   const [markerDragState, setMarkerDragState] = useState<MarkerDragState | null>(null);
   const [snapLine, setSnapLine] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
+  
+  const headersContainerRef = useRef<HTMLDivElement>(null);
+  const clipsContainerRef = useRef<HTMLDivElement>(null);
+  const scrollSyncLock = useRef({ header: false, clips: false });
+
+  const handleHeadersScroll = () => {
+    if (scrollSyncLock.current.header) {
+        scrollSyncLock.current.header = false;
+        return;
+    }
+    const headers = headersContainerRef.current;
+    const clips = clipsContainerRef.current;
+    if (headers && clips) {
+        scrollSyncLock.current.clips = true;
+        clips.scrollTop = headers.scrollTop;
+    }
+  };
+
+  const handleClipsScroll = () => {
+    if (scrollSyncLock.current.clips) {
+        scrollSyncLock.current.clips = false;
+        return;
+    }
+    const headers = headersContainerRef.current;
+    const clips = clipsContainerRef.current;
+    if (headers && clips) {
+        scrollSyncLock.current.header = true;
+        headers.scrollTop = clips.scrollTop;
+    }
+  };
 
   const timeToPx = (time: number) => time * state.zoom;
   const pxToTime = (px: number) => px / state.zoom;
-  const getHeaderWidth = () => window.innerWidth < 768 ? 50 : 200;
-
+  
   const handleTimelineInteraction = (clientX: number) => {
-    if (!timelineRef.current) return;
-    const rect = timelineRef.current.getBoundingClientRect();
-    const offsetX = clientX - rect.left - getHeaderWidth();
+    if (!clipsContainerRef.current) return;
+    const rect = clipsContainerRef.current.getBoundingClientRect();
+    const scrollLeft = clipsContainerRef.current.scrollLeft;
+    const offsetX = clientX - rect.left + scrollLeft;
     if (offsetX < 0) return;
     onSeek(Math.max(0, pxToTime(offsetX)));
   };
 
   const handleTimelineHeaderClick = (e: React.MouseEvent) => {
+    // Only seek if the click is on the timeline background, not a clip
+    if ((e.target as HTMLElement).closest('.group[draggable]')) return;
     handleTimelineInteraction(e.clientX);
     if (contextMenu) setContextMenu(null);
   };
 
   const handleHeaderMouseMove = (e: React.MouseEvent) => { if (isDraggingHeader) handleTimelineInteraction(e.clientX); };
   const handleHeaderTouchMove = (e: React.TouchEvent) => { if (isDraggingHeader) handleTimelineInteraction(e.touches[0].clientX); };
-  const handleHeaderMouseUp = () => setIsDraggingHeader(false);
-
+  
   const handleClipMouseDown = (e: React.MouseEvent | React.TouchEvent, clip: Clip) => {
     e.stopPropagation();
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
@@ -144,11 +175,9 @@ export const Timeline: React.FC<TimelineProps> = ({
   useEffect(() => {
     const handleGlobalMove = (e: MouseEvent | TouchEvent) => {
         if (isDraggingHeader) {
-            if (timelineRef.current) {
+            if (clipsContainerRef.current) {
                  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-                 const rect = timelineRef.current.getBoundingClientRect();
-                 const offsetX = clientX - rect.left - getHeaderWidth();
-                 onSeek(Math.max(0, pxToTime(offsetX)));
+                 handleTimelineInteraction(clientX);
             }
         }
         
@@ -177,10 +206,12 @@ export const Timeline: React.FC<TimelineProps> = ({
                 setSnapLine(snapCandidate);
 
                 let newTrackId = dragState.initialTrackId;
-                if (timelineRef.current) {
-                    const rect = timelineRef.current.getBoundingClientRect();
+                if (clipsContainerRef.current) {
+                    const rect = clipsContainerRef.current.getBoundingClientRect();
                     const y = ('touches' in e ? e.touches[0].clientY : e.clientY) - rect.top;
-                    const trackIndex = Math.floor((y - 32) / 96);
+                    const scrollTop = clipsContainerRef.current.scrollTop;
+                    // Account for ruler height (h-8 -> 32px)
+                    const trackIndex = Math.floor((y + scrollTop - 32) / 96);
                     if (trackIndex >= 0 && trackIndex < state.tracks.length) {
                         const targetTrack = state.tracks[trackIndex];
                         const canDrop = ((clip.type === 'video' || clip.type === 'image') && targetTrack.type === TrackType.VIDEO) || (clip.type === 'audio' && targetTrack.type === TrackType.AUDIO) || (clip.type === 'text' && targetTrack.type === TrackType.TEXT);
@@ -235,12 +266,10 @@ export const Timeline: React.FC<TimelineProps> = ({
     const handleGlobalUp = () => { setIsDraggingHeader(false); setDragState(null); setMarkerDragState(null); setSnapLine(null); };
     const handleGlobalClick = () => { if(contextMenu) setContextMenu(null); }
 
-    if (isDraggingHeader || dragState || markerDragState) {
-        window.addEventListener('mousemove', handleGlobalMove);
-        window.addEventListener('touchmove', handleGlobalMove, { passive: false });
-        window.addEventListener('mouseup', handleGlobalUp);
-        window.addEventListener('touchend', handleGlobalUp);
-    }
+    window.addEventListener('mousemove', handleGlobalMove);
+    window.addEventListener('touchmove', handleGlobalMove, { passive: false });
+    window.addEventListener('mouseup', handleGlobalUp);
+    window.addEventListener('touchend', handleGlobalUp);
     window.addEventListener('click', handleGlobalClick);
 
     return () => {
@@ -293,34 +322,46 @@ export const Timeline: React.FC<TimelineProps> = ({
         </div>
       </div>
       <div className="flex flex-1 overflow-hidden relative" onMouseMove={handleHeaderMouseMove} onTouchMove={handleHeaderTouchMove}>
-        <div className="w-[50px] md:w-[200px] flex-shrink-0 border-r border-gray-800 bg-gray-900 z-10 flex flex-col pt-8 transition-all duration-300">
-            {state.tracks.map(track => (
-                <div key={track.id} className="h-24 border-b border-gray-800 px-0 md:px-3 flex flex-col justify-center items-center md:items-stretch group hover:bg-gray-850 transition-colors relative">
-                    <div className="flex items-center justify-center md:justify-between text-gray-400 mb-0 md:mb-1"><span className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">{getTrackIcon(track.type)}<span className="hidden md:inline">{track.name}</span></span><MoreHorizontal size={14} className="hidden md:block opacity-0 group-hover:opacity-100 cursor-pointer" /></div>
-                    <div className="hidden md:flex gap-2 mt-2">
-                         <button onClick={() => onToggleTrackMute(track.id)} className={`text-xs px-2 py-0.5 rounded ${track.isMuted ? 'bg-red-500/80 text-white' : 'bg-gray-800 text-gray-500 hover:bg-gray-700 hover:text-white'}`}>M</button>
-                         <button onClick={() => onToggleTrackSolo(track.id)} className={`text-xs px-2 py-0.5 rounded ${track.isSolo ? 'bg-yellow-500 text-black font-bold' : 'bg-gray-800 text-gray-500 hover:bg-gray-700 hover:text-white'}`}>S</button>
-                         <button onClick={() => onToggleTrackRecord(track.id)} className={`text-xs px-2 py-0.5 rounded ${track.isRecordArmed ? 'bg-red-600 text-white font-bold animate-pulse' : 'bg-gray-800 text-gray-500 hover:bg-gray-700 hover:text-white'}`}>R</button>
+        <div className="w-[50px] md:w-[200px] flex-shrink-0 border-r border-gray-800 bg-gray-900 z-10 flex flex-col transition-all duration-300">
+            <div className="h-8 flex-shrink-0 border-b border-gray-800 bg-gray-900"></div>
+            <div ref={headersContainerRef} onScroll={handleHeadersScroll} className="flex-grow overflow-y-auto overflow-x-hidden no-scrollbar">
+                {state.tracks.map(track => (
+                    <div key={track.id} className="h-24 border-b border-gray-800 px-0 md:px-3 flex flex-col justify-center items-center md:items-stretch group hover:bg-gray-850 transition-colors relative flex-shrink-0">
+                        <div className="flex items-center justify-center md:justify-between text-gray-400 mb-0 md:mb-1"><span className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">{getTrackIcon(track.type)}<span className="hidden md:inline">{track.name}</span></span><MoreHorizontal size={14} className="hidden md:block opacity-0 group-hover:opacity-100 cursor-pointer" /></div>
+                        <div className="hidden md:flex gap-2 mt-2">
+                             <button onClick={() => onToggleTrackMute(track.id)} className={`text-xs px-2 py-0.5 rounded ${track.isMuted ? 'bg-red-500/80 text-white' : 'bg-gray-800 text-gray-500 hover:bg-gray-700 hover:text-white'}`}>M</button>
+                             <button onClick={() => onToggleTrackSolo(track.id)} className={`text-xs px-2 py-0.5 rounded ${track.isSolo ? 'bg-yellow-500 text-black font-bold' : 'bg-gray-800 text-gray-500 hover:bg-gray-700 hover:text-white'}`}>S</button>
+                             <button onClick={() => onToggleTrackRecord(track.id)} className={`text-xs px-2 py-0.5 rounded ${track.isRecordArmed ? 'bg-red-600 text-white font-bold animate-pulse' : 'bg-gray-800 text-gray-500 hover:bg-gray-700 hover:text-white'}`}>R</button>
+                        </div>
                     </div>
-                </div>
-            ))}
+                ))}
+            </div>
         </div>
-        <div className="flex-1 relative overflow-x-auto overflow-y-hidden bg-gray-950 touch-pan-x" ref={timelineRef} onClick={handleTimelineHeaderClick}>
-            <div className="h-8 border-b border-gray-800 bg-gray-900 sticky top-0 z-10 w-full" style={{ minWidth: '100%', width: timeToPx(state.duration) + 500 }}>
+        <div 
+            className="flex-1 relative overflow-auto bg-gray-950 touch-pan-x"
+            ref={el => {
+                timelineRef.current = el; // Keep for mouse move area
+                clipsContainerRef.current = el;
+            }}
+            onClick={handleTimelineHeaderClick}
+            onScroll={handleClipsScroll}
+        >
+          <div style={{ width: timeToPx(state.duration) + 500, minWidth: '100%', height: state.tracks.length * 96 + 32 }}>
+            <div className="h-8 border-b border-gray-800 bg-gray-900 sticky top-0 z-20">
                 {renderRuler()}
                 {state.markers.map(marker => (
-                    <div key={marker.id} className="absolute top-0 h-8 flex flex-col items-center group cursor-pointer touch-none" style={{ left: timeToPx(marker.time) }} onMouseDown={(e) => handleMarkerMouseDown(e, marker)} onClick={(e) => { e.stopPropagation(); onSeek(marker.time); }} onContextMenu={(e) => handleMarkerContextMenu(e, marker)}>
+                    <div key={marker.id} className="absolute top-0 h-full flex flex-col items-center group cursor-pointer touch-none" style={{ left: timeToPx(marker.time) }} onMouseDown={(e) => handleMarkerMouseDown(e, marker)} onClick={(e) => { e.stopPropagation(); onSeek(marker.time); }} onContextMenu={(e) => handleMarkerContextMenu(e, marker)}>
                         <div className="w-3 h-3 rotate-45 -mt-1.5" style={{ backgroundColor: marker.color }}></div><div className="h-full w-px" style={{ backgroundColor: marker.color }}></div><div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-gray-900 border border-gray-700 text-white text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-lg">{marker.label}</div>
                     </div>
                 ))}
-                <div className="absolute top-0 h-8 w-10 -ml-5 z-20 cursor-ew-resize group flex justify-center touch-none" style={{ left: timeToPx(state.currentTime) }} onMouseDown={(e) => { e.stopPropagation(); setIsDraggingHeader(true); }} onTouchStart={(e) => { e.stopPropagation(); setIsDraggingHeader(true); }}><div className="w-0 h-0 border-l-[6px] border-r-[6px] border-t-[8px] border-l-transparent border-r-transparent border-t-violet-500" /></div>
+                <div className="absolute top-0 h-full w-10 -ml-5 z-30 cursor-ew-resize group flex justify-center touch-none" style={{ left: timeToPx(state.currentTime) }} onMouseDown={(e) => { e.stopPropagation(); setIsDraggingHeader(true); }} onTouchStart={(e) => { e.stopPropagation(); setIsDraggingHeader(true); }}><div className="w-0 h-0 border-l-[6px] border-r-[6px] border-t-[8px] border-l-transparent border-r-transparent border-t-violet-500" /></div>
             </div>
             {contextMenu && (<div className="fixed z-50 bg-gray-800 border border-gray-700 rounded-md shadow-lg text-white text-xs" style={{ top: contextMenu.y, left: contextMenu.x }}><button onClick={() => { onDeleteMarker(contextMenu.markerId); setContextMenu(null); }} className="w-full text-left px-3 py-2 hover:bg-red-800/50 flex items-center gap-2"><Trash2 size={12} /> Delete Marker</button></div>)}
-            <div className="relative" style={{ minWidth: '100%', width: timeToPx(state.duration) + 500 }}>
-                <div className="absolute top-0 bottom-0 w-px bg-violet-500 z-20 pointer-events-none" style={{ left: timeToPx(state.currentTime), height: state.tracks.length * 96 }} />
-                {snapLine !== null && <div className="absolute top-0 bottom-0 w-px bg-yellow-400 z-30 pointer-events-none shadow-[0_0_10px_rgba(250,204,21,0.5)]" style={{ left: timeToPx(snapLine), height: state.tracks.length * 96 }} />}
-                {state.tracks.map(track => (
-                    <div key={track.id} className="h-24 border-b border-gray-800 relative bg-gray-950/50">
+            <div className="relative">
+                <div className="absolute top-0 w-px bg-violet-500 z-20 pointer-events-none" style={{ left: timeToPx(state.currentTime), height: state.tracks.length * 96 + 32 }} />
+                {snapLine !== null && <div className="absolute top-0 w-px bg-yellow-400 z-30 pointer-events-none shadow-[0_0_10px_rgba(250,204,21,0.5)]" style={{ left: timeToPx(snapLine), height: state.tracks.length * 96 + 32 }} />}
+                {state.tracks.map((track, i) => (
+                    <div key={track.id} className="h-24 border-b border-gray-800 relative bg-gray-950/50" style={{top: i * 96}}>
                         <div className="absolute inset-0 w-full h-full pointer-events-none opacity-5 bg-[linear-gradient(90deg,transparent_49%,#fff_50%,transparent_51%)]" style={{ backgroundSize: `${state.zoom * 10}px 100%` }}></div>
                         {state.clips.filter(c => c.trackId === track.id).map(clip => {
                             const width = timeToPx(clip.duration); const aiDuration = clip.properties.aiExtendedDuration || 0; const aiWidth = timeToPx(aiDuration); const isDragging = dragState?.clipId === clip.id && dragState.type === 'move';
@@ -329,7 +370,7 @@ export const Timeline: React.FC<TimelineProps> = ({
                                     {clip.type === 'video' && clip.thumbnail && (
                                         <div className="absolute inset-0 w-full h-full flex overflow-hidden">
                                             {Array(Math.ceil(width / 70)).fill(0).map((_, i) => (
-                                                <img key={i} src={clip.thumbnail} className="w-auto h-full" style={{ transform: `translateX(-${(i % 2) * 20}px)` }} />
+                                                <img key={i} src={clip.thumbnail} className="w-auto h-full" style={{ transform: `translateX(-${(i % 2) * 20}px)` }} alt="" />
                                             ))}
                                             <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
                                         </div>
@@ -345,6 +386,7 @@ export const Timeline: React.FC<TimelineProps> = ({
                         })}
                     </div>
                 ))}
+            </div>
             </div>
         </div>
       </div>

@@ -68,6 +68,9 @@ export const exportProject = async (
     // 2. Setup Audio Mixer
     onProgress(0.05, "Compositing audio...");
     const audioCtx = new AudioContext();
+    if (audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+    }
     const destination = audioCtx.createMediaStreamDestination();
     const audioElements = new Map<string, { el: HTMLAudioElement, source: MediaElementAudioSourceNode }>();
     const audioSetupPromises = project.clips
@@ -77,9 +80,13 @@ export const exportProject = async (
             audio.src = clip.src;
             audio.crossOrigin = "anonymous";
             audio.oncanplaythrough = () => {
-                const source = audioCtx.createMediaElementSource(audio);
-                source.connect(destination);
-                audioElements.set(clip.id, { el: audio, source });
+                try {
+                    const source = audioCtx.createMediaElementSource(audio);
+                    source.connect(destination);
+                    audioElements.set(clip.id, { el: audio, source });
+                } catch (e) {
+                    console.warn(`Could not create audio source for ${clip.name}. It might already be in use.`, e);
+                }
                 resolve();
             };
             audio.onerror = () => resolve();
@@ -90,23 +97,42 @@ export const exportProject = async (
     const audioTrack = destination.stream.getAudioTracks()[0];
     const canvasStream = canvas.captureStream(FRAME_RATE);
     const videoTrack = canvasStream.getVideoTracks()[0];
-    const combinedStream = new MediaStream([videoTrack, audioTrack]);
-
-    const MimeType = 'video/mp4; codecs=avc1.42E01E,mp4a.40.2';
-    if (!MediaRecorder.isTypeSupported(MimeType)) {
-        throw new Error("MP4 export is not supported in this browser. Please try Chrome on desktop.");
+    
+    const tracks = [videoTrack, audioTrack].filter(Boolean) as MediaStreamTrack[];
+    if (tracks.length === 0) {
+        throw new Error("Could not create any media tracks for recording.");
     }
-    const recorder = new MediaRecorder(combinedStream, { mimeType: MimeType, videoBitsPerSecond: 5000000 });
+    const combinedStream = new MediaStream(tracks);
+
+    let mimeType = 'video/mp4; codecs=avc1.42E01E,mp4a.40.2';
+    let fileExtension = 'mp4';
+    let blobType = 'video/mp4';
+
+    if (!MediaRecorder.isTypeSupported(mimeType)) {
+        console.warn('MP4 with H.264 not supported, falling back to WebM with VP9');
+        mimeType = 'video/webm; codecs=vp9,opus';
+        fileExtension = 'webm';
+        blobType = 'video/webm';
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+            console.warn('WebM with VP9 not supported, falling back to generic WebM');
+            mimeType = 'video/webm';
+            if (!MediaRecorder.isTypeSupported(mimeType)) {
+                throw new Error("No supported video format found for recording. Please try a modern browser like Chrome or Firefox.");
+            }
+        }
+    }
+
+    const recorder = new MediaRecorder(combinedStream, { mimeType: mimeType, videoBitsPerSecond: 5000000 });
     const chunks: Blob[] = [];
     recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
     
     const exportPromise = new Promise<void>((resolve, reject) => {
         recorder.onstop = () => {
-            const blob = new Blob(chunks, { type: 'video/mp4' });
+            const blob = new Blob(chunks, { type: blobType });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `Lumina-Export-${resolution.name}.mp4`;
+            a.download = `Lumina-Export-${resolution.name}.${fileExtension}`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -199,16 +225,31 @@ export const exportProject = async (
                     ctx.drawImage(mediaEl, offsetX, offsetY, drawWidth, drawHeight);
                 }
             } else if (clip.type === 'text') {
-                ctx.fillStyle = props.fontColor || '#FFFFFF';
                 ctx.font = `${props.fontWeight || 'normal'} ${props.fontSize || 24}px ${props.fontFamily || 'sans-serif'}`;
                 ctx.textAlign = props.textAlign || 'center';
                 ctx.textBaseline = 'middle';
-                if(props.backgroundColor) {
+                const textContent = props.textContent || '';
+
+                if (props.backgroundColor) {
                     ctx.fillStyle = props.backgroundColor;
-                    // simple background rect
+                    const textMetrics = ctx.measureText(textContent);
+                    const textHeight = props.fontSize || 24;
+                    const padding = textHeight * 0.2; // A bit of padding
+                    const rectWidth = textMetrics.width + padding * 2;
+                    const rectHeight = textHeight + padding * 2;
+                    let rectX;
+                    if (ctx.textAlign === 'center') {
+                        rectX = -rectWidth / 2;
+                    } else if (ctx.textAlign === 'right') {
+                        rectX = -rectWidth + padding;
+                    } else { // left
+                        rectX = -padding;
+                    }
+                    ctx.fillRect(rectX, -rectHeight / 2, rectWidth, rectHeight);
                 }
+
                 ctx.fillStyle = props.fontColor || '#FFFFFF';
-                ctx.fillText(props.textContent || '', 0, 0);
+                ctx.fillText(textContent, 0, 0);
             }
             ctx.restore();
         }

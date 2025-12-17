@@ -11,7 +11,8 @@ export const generateCreativeIdeas = async (prompt: string): Promise<string> => 
   try {
     const ai = getAiClient();
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      // FIX: Use recommended model for basic text tasks.
+      model: "gemini-3-flash-preview",
       contents: `You are a creative director for music videos. The user wants ideas for: ${prompt}. Provide a concise list of 3 visual concepts or scene ideas.`,
       config: {
         thinkingConfig: { thinkingBudget: 0 } 
@@ -28,7 +29,8 @@ export const generateScript = async (concept: string): Promise<string> => {
   try {
     const ai = getAiClient();
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      // FIX: Use recommended model for basic text tasks.
+      model: "gemini-3-flash-preview",
       contents: `Write a short timeline script for a 30-second music video based on this concept: ${concept}. Format it as a list of timestamps and actions.`,
     });
     return response.text || "No script generated.";
@@ -42,7 +44,8 @@ export const detectMaskableObjects = async (clipName: string): Promise<string[]>
   try {
     const ai = getAiClient();
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      // FIX: Use recommended model for basic text tasks.
+      model: "gemini-3-flash-preview",
       contents: `Analyze a video clip titled "${clipName}". List 4 distinct physical objects or people likely to be in this scene that a video editor might want to mask (e.g., 'Main Dancer', 'Red Car', 'Sky', 'Neon Sign'). Return only the comma-separated list.`,
     });
     const text = response.text || "";
@@ -57,7 +60,8 @@ export const analyzeReframeFocus = async (clipName: string): Promise<{ subject: 
   try {
     const ai = getAiClient();
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      // FIX: Use recommended model for this task.
+      model: "gemini-3-flash-preview",
       contents: `Imagine a video clip named "${clipName}". Identify the main subject and determining where they are likely positioned horizontally in a standard wide shot.
       Return a JSON object with:
       - "subject": string description of the subject.
