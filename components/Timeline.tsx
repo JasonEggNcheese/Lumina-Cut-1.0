@@ -49,22 +49,20 @@ const WaveformVisualizer = ({ width, color = "#10b981", height = 24 }: { width: 
     const pathData = useMemo(() => {
         if (width <= 0) return '';
         const points = [];
-        const barWidth = 3; const gap = 1;
-        const numBars = Math.ceil(width / (barWidth + gap));
+        const barWidth = 2; const gap = 2;
+        const numBars = Math.floor(width / (barWidth + gap));
+        const midY = height / 2;
         for (let i = 0; i < numBars; i++) {
             const x = i * (barWidth + gap);
-            const noise = Math.random() * 0.3; 
-            const structure = (Math.sin(i * 0.2) + 1) / 2; 
-            const structure2 = (Math.cos(i * 0.8) + 1) / 2; 
-            const normalizedHeight = (structure * 0.5 + structure2 * 0.3 + noise) * 0.8;
-            const barH = Math.max(2, normalizedHeight * height); 
-            const y = (height - barH) / 2;
-            points.push(`M ${x},${y} v ${barH}`);
+            const structure = Math.pow(Math.sin(i * 0.1), 2) * Math.cos(i * 0.05);
+            const detail = (Math.sin(i * 0.5) + 1) / 2;
+            const normalizedHeight = (0.6 * structure + 0.4 * detail) * midY * 0.8;
+            points.push(`M ${x},${midY - normalizedHeight} v ${normalizedHeight * 2}`);
         }
         return points.join(' ');
     }, [width, height]);
 
-    return <svg width="100%" height="100%" className="absolute inset-0 pointer-events-none opacity-80" preserveAspectRatio="none"><path d={pathData} stroke={color} strokeWidth="2" strokeLinecap="round" vectorEffect="non-scaling-stroke" fill="none" /></svg>;
+    return <svg width="100%" height={height} className="absolute top-1/2 -translate-y-1/2 pointer-events-none opacity-80" preserveAspectRatio="none"><path d={pathData} stroke={color} strokeWidth="2" strokeLinecap="round" vectorEffect="non-scaling-stroke" fill="none" /></svg>;
 }
 
 export const Timeline: React.FC<TimelineProps> = ({ 
@@ -328,7 +326,15 @@ export const Timeline: React.FC<TimelineProps> = ({
                             const width = timeToPx(clip.duration); const aiDuration = clip.properties.aiExtendedDuration || 0; const aiWidth = timeToPx(aiDuration); const isDragging = dragState?.clipId === clip.id && dragState.type === 'move';
                             return (
                                 <div key={clip.id} className={`absolute top-2 bottom-2 rounded-md overflow-hidden cursor-pointer border ring-offset-1 ring-offset-gray-900 transition-shadow touch-none group ${clip.selected ? 'border-violet-400 ring-2 ring-violet-500 z-10' : 'border-gray-700 hover:border-gray-500'} ${clip.type === 'audio' ? 'bg-emerald-900/30' : clip.type === 'text' ? 'bg-blue-900/30' : 'bg-violet-900/30'} ${isDragging ? 'opacity-80 scale-[1.01] shadow-xl z-50 cursor-grabbing' : 'cursor-grab'}`} style={{ left: timeToPx(clip.startOffset), width: Math.max(2, width) }} onMouseDown={(e) => handleClipMouseDown(e, clip)} onTouchStart={(e) => handleClipMouseDown(e, clip)} onDragOver={handleDragOver} onDrop={(e) => handleDropTransition(e, clip)}>
-                                    {clip.type === 'audio' && clip.selected && <div className="absolute inset-0 top-3 bottom-0 opacity-80"><WaveformVisualizer width={width} color="#34d399" height={70} /></div>}
+                                    {clip.type === 'video' && clip.thumbnail && (
+                                        <div className="absolute inset-0 w-full h-full flex overflow-hidden">
+                                            {Array(Math.ceil(width / 70)).fill(0).map((_, i) => (
+                                                <img key={i} src={clip.thumbnail} className="w-auto h-full" style={{ transform: `translateX(-${(i % 2) * 20}px)` }} />
+                                            ))}
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent"></div>
+                                        </div>
+                                    )}
+                                    {clip.type === 'audio' && <WaveformVisualizer width={width} height={60} color="#34d399" />}
                                     {clip.transition && <div className="absolute left-0 top-0 bottom-0 bg-yellow-500/50 border-r border-yellow-500 z-20 flex items-center justify-center overflow-hidden" style={{ width: timeToPx(clip.transition.duration) }} title={`${clip.transition.type} (${clip.transition.duration}s)`}><div className="bg-yellow-400/20 w-full h-full absolute animate-pulse"></div></div>}
                                     {aiDuration > 0 && <div className="absolute right-0 top-0 bottom-0 bg-emerald-500/10 border-l-2 border-dashed border-emerald-500/50 z-0" style={{ width: aiWidth }}><div className="absolute inset-0 opacity-20 bg-[radial-gradient(#10b981_1px,transparent_1px)] [background-size:4px_4px]"></div></div>}
                                     <div className="absolute top-0 left-0 right-0 px-2 py-1 text-xs truncate text-white/90 drop-shadow-md select-none bg-black/20 z-10 pointer-events-none">{clip.name}</div>

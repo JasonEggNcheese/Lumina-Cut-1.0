@@ -112,6 +112,7 @@ export interface Clip {
   selected?: boolean;
   properties: ClipProperties;
   transition?: Transition; // Entry transition
+  thumbnail?: string;
 }
 
 export interface Track {

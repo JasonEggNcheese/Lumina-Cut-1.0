@@ -178,7 +178,9 @@ const App: React.FC = () => {
         (asset.type !== 'audio' && t.type === TrackType.VIDEO)
       )?.id || project.tracks[0].id,
       startOffset: project.currentTime, duration: asset.duration, sourceStart: 0,
-      type: asset.type, src: asset.src, selected: true, properties: {
+      type: asset.type, src: asset.src, selected: true,
+      thumbnail: asset.thumbnail,
+      properties: {
         opacity: 100, scale: 100, position: { x: 0, y: 0 }, volume: 100, pan: 0,
         brightness: 0, contrast: 0, saturation: 100, speed: 1, reversed: false,
         speedRamp: { enabled: false, points: [{time: 0, speed: 1}, {time: 0.5, speed: 1}, {time: 1, speed: 1}]}
