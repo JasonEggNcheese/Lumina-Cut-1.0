@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Clip, VisualEffect, VisualEffectType, ChromaKey, TransitionType } from '../types';
-import { Sliders, Aperture, Music2, Wand2, X, ScanFace, Loader2, CheckCircle2, Eye, Crop, MonitorSmartphone, StretchHorizontal, Timer, Plus, Trash2, Droplets, Palette, Sun, Zap, CircleDashed, Pipette, Type, AlignCenter, AlignLeft, AlignRight, Mountain, RotateCw, Layers, Minus, Triangle, PenTool, Eraser } from 'lucide-react';
+import { Clip, VisualEffect, VisualEffectType, ChromaKey, TransitionType, EqualizerSettings } from '../types';
+import { Sliders, Aperture, Music2, Wand2, X, ScanFace, Loader2, CheckCircle2, Eye, Crop, MonitorSmartphone, StretchHorizontal, Timer, Plus, Trash2, Droplets, Palette, Sun, Zap, CircleDashed, Pipette, Type, AlignCenter, AlignLeft, AlignRight, Mountain, RotateCw, Layers, Minus, Triangle, PenTool, Eraser, SlidersHorizontal, RotateCcw } from 'lucide-react';
 import { detectMaskableObjects, analyzeReframeFocus, generateExtendedFrames } from '../services/geminiService';
 
 interface InspectorProps {
@@ -9,6 +9,90 @@ interface InspectorProps {
   onClose: () => void;
   projectAspectRatio: string;
 }
+
+// --- EQ Panel Component ---
+const EQ_BANDS = [
+  { freq: 60, label: '60' },
+  { freq: 250, label: '250' },
+  { freq: 1000, label: '1k' },
+  { freq: 4000, label: '4k' },
+  { freq: 16000, label: '16k' },
+];
+const DEFAULT_EQ: EqualizerSettings = {
+  enabled: false,
+  masterGain: 100,
+  bands: { '60': 0, '250': 0, '1k': 0, '4k': 0, '16k': 0 },
+};
+
+const EQCurve = ({ settings }: { settings: EqualizerSettings }) => {
+    const points = EQ_BANDS.map((band, index) => {
+        const x = (index / (EQ_BANDS.length - 1)) * 100;
+        const gain = settings.bands[band.label as keyof typeof settings.bands];
+        const y = 50 - (gain * 3);
+        return `${x},${y}`;
+    });
+    const path = `M 0,50 C 10,50 ${points[0]} S ${points.join(' ')} 90,50 100,50`;
+    return (
+        <svg viewBox="0 0 100 100" className="w-full h-24 bg-gray-950/50 rounded-md border border-gray-700 mb-4">
+            <path d={path} fill="none" stroke="#a78bfa" strokeWidth="2" />
+            <line x1="0" y1="50" x2="100" y2="50" stroke="#4b5563" strokeWidth="0.5" strokeDasharray="2" />
+        </svg>
+    );
+};
+
+const EQPanel: React.FC<{ clip: Clip, onUpdateClip: InspectorProps['onUpdateClip'], onClose: () => void }> = ({ clip, onUpdateClip, onClose }) => {
+  const eqSettings = clip.properties.equalizer || DEFAULT_EQ;
+
+  const updateEq = (updates: Partial<EqualizerSettings>) => {
+    onUpdateClip(clip.id, {
+      properties: { ...clip.properties, equalizer: { ...eqSettings, ...updates } },
+    });
+  };
+  const updateBand = (band: keyof typeof eqSettings.bands, value: number) => {
+    updateEq({ bands: { ...eqSettings.bands, [band]: value } });
+  };
+  const handleReset = () => {
+      onUpdateClip(clip.id, {
+        properties: { ...clip.properties, equalizer: { ...eqSettings, bands: DEFAULT_EQ.bands }}
+      });
+  };
+
+  return (
+    <div className="absolute inset-0 bg-gray-950/80 backdrop-blur-sm z-30 flex items-center justify-center">
+      <div className="bg-gray-850 border border-gray-700 rounded-lg shadow-2xl w-full max-w-md mx-4">
+        <div className="flex items-center justify-between p-4 border-b border-gray-700">
+          <h3 className="font-semibold text-white flex items-center gap-2"><SlidersHorizontal size={16} className="text-violet-400"/> Graphic Equalizer</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-white"><X size={18} /></button>
+        </div>
+        <div className="p-6">
+            <EQCurve settings={eqSettings} />
+            <div className="flex justify-between items-center mb-6">
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center">
+                        <label htmlFor="eq-toggle" className="text-sm text-gray-300 mr-3">Enable EQ</label>
+                        <button id="eq-toggle" onClick={() => updateEq({ enabled: !eqSettings.enabled })} className={`w-10 h-5 rounded-full transition-colors flex items-center p-1 ${eqSettings.enabled ? 'bg-violet-500 justify-end' : 'bg-gray-700 justify-start'}`}><div className="w-3 h-3 bg-white rounded-full shadow-md"></div></button>
+                    </div>
+                    <button onClick={handleReset} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white"><RotateCcw size={12} /> Reset</button>
+                </div>
+            </div>
+            <div className="flex justify-between items-start gap-4">
+                {EQ_BANDS.map(({ label }) => (
+                    <div key={label} className="flex flex-col items-center">
+                        <div className="h-40 w-8 relative">
+                            <input type="range" min="-12" max="12" step="1" value={eqSettings.bands[label as keyof typeof eqSettings.bands]} onChange={(e) => updateBand(label as keyof typeof eqSettings.bands, parseInt(e.target.value))} className="w-40 h-1 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -rotate-90 appearance-none cursor-pointer accent-violet-500 bg-gray-700 rounded-lg" disabled={!eqSettings.enabled} />
+                        </div>
+                        <span className="text-xs text-gray-400 mt-2">{label}</span>
+                        <span className="text-xs font-mono text-white mt-1">{eqSettings.bands[label as keyof typeof eqSettings.bands] > 0 ? '+' : ''}{eqSettings.bands[label as keyof typeof eqSettings.bands]}dB</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+// --- End EQ Panel Component ---
+
 
 const Slider = ({ label, value, min, max, step = 1, onChange, unit = '' }: any) => (
   <div className="mb-4">
@@ -57,6 +141,7 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
   const [isReframing, setIsReframing] = useState(false);
   const [isExtending, setIsExtending] = useState(false);
   const [extensionSeconds, setExtensionSeconds] = useState(2);
+  const [showEqPanel, setShowEqPanel] = useState(false);
 
   if (!clip) {
     return (
@@ -682,13 +767,13 @@ export const Inspector: React.FC<InspectorProps> = ({ clip, onUpdateClip, onClos
               />
               <div className="mt-4 pt-4 border-t border-gray-700 flex justify-between items-center">
                  <span className="text-xs text-gray-400">Equalizer</span>
-                 <button className="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded">Open EQ</button>
+                 <button onClick={() => setShowEqPanel(true)} className="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded">Open EQ</button>
               </div>
             </div>
           </div>
         )}
-
       </div>
+      {showEqPanel && <EQPanel clip={clip} onUpdateClip={onUpdateClip} onClose={() => setShowEqPanel(false)} />}
     </div>
   );
 };

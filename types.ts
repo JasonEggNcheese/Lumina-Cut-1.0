@@ -41,6 +41,18 @@ export interface ChromaKey {
   shadow?: number; // 0-100
 }
 
+export interface EqualizerSettings {
+  enabled: boolean;
+  bands: {
+    '60': number;
+    '250': number;
+    '1k': number;
+    '4k': number;
+    '16k': number;
+  };
+  masterGain: number;
+}
+
 export interface ClipProperties {
   // Video & General
   opacity?: number;
@@ -59,6 +71,7 @@ export interface ClipProperties {
   // Audio
   volume?: number;
   pan?: number;
+  equalizer?: EqualizerSettings;
 
   // Timing
   speed?: number; // playback speed multiplier e.g., 1, 2, 0.5

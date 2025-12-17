@@ -9,9 +9,11 @@ interface PlayerProps {
   playerRef: React.RefObject<HTMLDivElement>;
 }
 
+const EQ_FREQUENCIES = [60, 250, 1000, 4000, 16000];
+
 // Global state for Web Audio API
 let audioContext: AudioContext | null = null;
-const audioNodes = new Map<HTMLMediaElement, { source: MediaElementAudioSourceNode, panner: StereoPannerNode }>();
+const audioNodes = new Map<HTMLMediaElement, { source: MediaElementAudioSourceNode, panner: StereoPannerNode, filters: BiquadFilterNode[] }>();
 
 // --- Speed Ramping Logic ---
 // Function to get the speed at a certain progress point (0-1) along the clip
@@ -87,8 +89,22 @@ const setupAudioNode = (mediaElement: HTMLMediaElement) => {
     try {
         const source = audioContext.createMediaElementSource(mediaElement);
         const panner = audioContext.createStereoPanner();
-        source.connect(panner).connect(audioContext.destination);
-        audioNodes.set(mediaElement, { source, panner });
+        
+        const filters = EQ_FREQUENCIES.map(freq => {
+            const filter = audioContext!.createBiquadFilter();
+            filter.type = 'peaking';
+            filter.frequency.value = freq;
+            filter.Q.value = 1.41;
+            filter.gain.value = 0;
+            return filter;
+        });
+
+        const chain = [source, ...filters, panner, audioContext.destination];
+        for (let i = 0; i < chain.length - 1; i++) {
+            (chain[i] as AudioNode).connect(chain[i+1] as AudioNode);
+        }
+
+        audioNodes.set(mediaElement, { source, panner, filters });
     } catch (e) { console.warn("Error creating audio source:", e); }
 };
 
@@ -128,6 +144,17 @@ const AudioTrackPlayer: React.FC<{ clip: Clip; projectState: ProjectState }> = (
         if (nodes && audioContext) {
             const panValue = (props.pan ?? 0) / 50;
             nodes.panner.pan.setValueAtTime(panValue, audioContext.currentTime);
+
+            const eq = props.equalizer;
+            if (eq && eq.enabled) {
+                nodes.filters[0].gain.setValueAtTime(eq.bands['60'], audioContext.currentTime);
+                nodes.filters[1].gain.setValueAtTime(eq.bands['250'], audioContext.currentTime);
+                nodes.filters[2].gain.setValueAtTime(eq.bands['1k'], audioContext.currentTime);
+                nodes.filters[3].gain.setValueAtTime(eq.bands['4k'], audioContext.currentTime);
+                nodes.filters[4].gain.setValueAtTime(eq.bands['16k'], audioContext.currentTime);
+            } else {
+                nodes.filters.forEach(f => f.gain.setValueAtTime(0, audioContext.currentTime));
+            }
         }
     }, [projectState.currentTime, projectState.isPlaying, clip, projectState.tracks]);
     return <audio ref={audioRef} src={clip.src} crossOrigin="anonymous" />;
@@ -213,6 +240,17 @@ export const Player: React.FC<PlayerProps> = ({ projectState, onTogglePlay, onSe
       if (nodes && audioContext) {
           const panValue = (props.pan ?? 0) / 50;
           nodes.panner.pan.setValueAtTime(panValue, audioContext.currentTime);
+
+          const eq = props.equalizer;
+          if (eq && eq.enabled) {
+              nodes.filters[0].gain.setValueAtTime(eq.bands['60'], audioContext.currentTime);
+              nodes.filters[1].gain.setValueAtTime(eq.bands['250'], audioContext.currentTime);
+              nodes.filters[2].gain.setValueAtTime(eq.bands['1k'], audioContext.currentTime);
+              nodes.filters[3].gain.setValueAtTime(eq.bands['4k'], audioContext.currentTime);
+              nodes.filters[4].gain.setValueAtTime(eq.bands['16k'], audioContext.currentTime);
+          } else {
+              nodes.filters.forEach(f => f.gain.setValueAtTime(0, audioContext.currentTime));
+          }
       }
     });
   }, [projectState.currentTime, projectState.isPlaying, activeVisualClips, projectState.tracks]);

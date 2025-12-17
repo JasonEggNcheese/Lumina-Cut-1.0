@@ -7,9 +7,11 @@ import { AIAssistant } from './components/AIAssistant';
 import { Inspector } from './components/Inspector';
 import { TransitionsPanel } from './components/TransitionsPanel';
 import { TextOverlayPanel } from './components/TextOverlayPanel';
+import { ExportModal } from './components/ExportModal';
 import { Button } from './components/Button';
 import { Download, Sparkles, Layout, Clapperboard, Scissors, Wand2, Palette, Music, FileVideo, MonitorSmartphone, Zap, Type, Camera, FilePlus } from 'lucide-react';
 import html2canvas from 'html2canvas';
+import { exportProject } from './services/exportService';
 
 // Initial Mock Data
 const INITIAL_TRACKS: Track[] = [
@@ -44,6 +46,12 @@ const App: React.FC = () => {
   const [showMediaLibrary, setShowMediaLibrary] = useState(true);
   const [showTransitions, setShowTransitions] = useState(false);
   const [showTextPanel, setShowTextPanel] = useState(false);
+
+  // Export State
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
+  const [exportStatus, setExportStatus] = useState('');
   
   // Load project from localStorage on initial render
   useEffect(() => {
@@ -329,6 +337,24 @@ const App: React.FC = () => {
     });
   }, [clipboard, project.tracks, project.currentTime]);
 
+  const handleStartExport = async (resolution: { width: number; height: number; name: string }) => {
+    setIsExporting(true);
+    setExportProgress(0);
+    setExportStatus('Initializing...');
+    try {
+        await exportProject(project, assets, resolution, (progress, status) => {
+            setExportProgress(progress);
+            setExportStatus(status);
+        });
+    } catch (error) {
+        console.error("Export failed:", error);
+        alert(`Export failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+        setIsExporting(false);
+        setShowExportModal(false);
+    }
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
         if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -413,7 +439,7 @@ const App: React.FC = () => {
                 <span className="hidden md:inline">Lumina AI</span>
              </Button>
              <div className="h-4 w-px bg-gray-800 mx-2 hidden md:block"></div>
-             <Button variant="primary" size="sm" className="bg-violet-600 hover:bg-violet-500 text-xs px-2 md:px-4">
+             <Button variant="primary" size="sm" className="bg-violet-600 hover:bg-violet-500 text-xs px-2 md:px-4" onClick={() => setShowExportModal(true)}>
                 <Download size={14} className="mr-0 md:mr-2" />
                 <span className="hidden md:inline">Export</span>
              </Button>
@@ -439,6 +465,15 @@ const App: React.FC = () => {
         </div>
         {showAiPanel && (<div className="fixed inset-0 z-50 md:static md:inset-auto md:z-auto"><AIAssistant onClose={() => setShowAiPanel(false)} /></div>)}
         {showInspector && (<div className="fixed inset-0 z-40 md:static md:inset-auto md:z-auto"><Inspector clip={selectedClip} onUpdateClip={updateClip} onClose={() => setShowInspector(false)} projectAspectRatio={project.aspectRatio} /></div>)}
+        {showExportModal && 
+            <ExportModal 
+                onClose={() => setShowExportModal(false)}
+                onExport={handleStartExport}
+                isExporting={isExporting}
+                progress={exportProgress}
+                status={exportStatus}
+            />
+        }
       </div>
       <div className="h-14 bg-gray-950 border-t border-gray-800 flex items-center justify-around md:justify-center shrink-0 z-50">
           <NavItem id="media" icon={FileVideo} label="Media" /><NavItem id="text" icon={Type} label="Text" /><NavItem id="transitions" icon={Zap} label="Trans" /><NavItem id="edit" icon={Clapperboard} label="Edit" /><NavItem id="color" icon={Palette} label="Color" /><div className="hidden md:flex"><NavItem id="fairlight" icon={Music} label="Fairlight" /><NavItem id="cut" icon={Scissors} label="Cut" /></div><NavItem id="deliver" icon={Download} label="Deliver" />
