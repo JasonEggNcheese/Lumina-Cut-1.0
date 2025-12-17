@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ProjectState, Track, TrackType, Clip, MediaAsset, AspectRatio, TransitionType, ClipProperties, Marker } from './types';
 import { Timeline } from './components/Timeline';
 import { Player } from './components/Player';
@@ -8,7 +8,7 @@ import { Inspector } from './components/Inspector';
 import { TransitionsPanel } from './components/TransitionsPanel';
 import { TextOverlayPanel } from './components/TextOverlayPanel';
 import { Button } from './components/Button';
-import { Download, Sparkles, Layout, Clapperboard, Scissors, Wand2, Palette, Music, FileVideo, MonitorSmartphone, Zap, Type, Camera } from 'lucide-react';
+import { Download, Sparkles, Layout, Clapperboard, Scissors, Wand2, Palette, Music, FileVideo, MonitorSmartphone, Zap, Type, Camera, FilePlus } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
 // Initial Mock Data
@@ -20,9 +20,7 @@ const INITIAL_TRACKS: Track[] = [
   { id: '4', type: TrackType.AUDIO, name: 'Audio 2', isMuted: false, isLocked: false, isSolo: false, isRecordArmed: false },
 ];
 
-const App: React.FC = () => {
-  const playerRef = useRef<HTMLDivElement>(null);
-  const [project, setProject] = useState<ProjectState>({
+const INITIAL_PROJECT_STATE: ProjectState = {
     tracks: INITIAL_TRACKS,
     clips: [],
     markers: [],
@@ -31,7 +29,12 @@ const App: React.FC = () => {
     zoom: 20, // pixels per second
     isPlaying: false,
     aspectRatio: '16:9'
-  });
+};
+
+const App: React.FC = () => {
+  const playerRef = useRef<HTMLDivElement>(null);
+  const [project, setProject] = useState<ProjectState>(INITIAL_PROJECT_STATE);
+  const [clipboard, setClipboard] = useState<Clip | null>(null);
 
   const [assets, setAssets] = useState<MediaAsset[]>([]);
   const [showAiPanel, setShowAiPanel] = useState(false);
@@ -41,6 +44,44 @@ const App: React.FC = () => {
   const [showMediaLibrary, setShowMediaLibrary] = useState(true);
   const [showTransitions, setShowTransitions] = useState(false);
   const [showTextPanel, setShowTextPanel] = useState(false);
+  
+  // Load project from localStorage on initial render
+  useEffect(() => {
+    const savedData = localStorage.getItem('luminaCutProject');
+    if (savedData) {
+        try {
+            const { project: savedProject, assets: savedAssets } = JSON.parse(savedData);
+            if (savedProject && savedAssets) {
+                // Restore project state, ensuring playback is paused.
+                setProject({ ...savedProject, isPlaying: false });
+                setAssets(savedAssets);
+                console.log("Project loaded from localStorage.");
+            }
+        } catch (error) {
+            console.error("Failed to load project from localStorage:", error);
+            // On failure, the app will proceed with the initial empty state.
+        }
+    }
+  }, []);
+
+  // Auto-save project to localStorage whenever it changes
+  useEffect(() => {
+    // Debounce saving to avoid excessive writes, especially during seeking.
+    const handler = setTimeout(() => {
+        // Create a savable version of the project state.
+        const projectToSave = {
+            ...project,
+            isPlaying: false, // Always save in a non-playing state
+        };
+        const dataToSave = { project: projectToSave, assets };
+        localStorage.setItem('luminaCutProject', JSON.stringify(dataToSave));
+    }, 1000); // 1-second debounce
+
+    return () => {
+        clearTimeout(handler);
+    };
+  }, [project, assets]);
+
 
   useEffect(() => {
       if (window.innerWidth < 768) {
@@ -63,8 +104,6 @@ const App: React.FC = () => {
           const selectedClip = prev.clips.find(c => c.selected && c.properties.speedRamp?.enabled);
           let speedMultiplier = 1.0;
           if(selectedClip) {
-              // This is a simplification; a full implementation would calculate the exact speed at the current time
-              // For now, let's just assume the average speed of the ramp
               const rampPoints = selectedClip.properties.speedRamp?.points || [];
               if(rampPoints.length > 0) {
                   speedMultiplier = rampPoints.reduce((acc, p) => acc + p.speed, 0) / rampPoints.length;
@@ -91,7 +130,7 @@ const App: React.FC = () => {
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [project.isPlaying]);
+  }, [project.isPlaying, project.duration]); // Added project.duration dependency
 
   // Handlers
   const togglePlay = () => setProject(p => ({ ...p, isPlaying: !p.isPlaying }));
@@ -243,6 +282,72 @@ const App: React.FC = () => {
         });
     }
   };
+  
+  const handleNewProject = () => {
+    if (window.confirm("Are you sure you want to start a new project? This will clear your current timeline.")) {
+        localStorage.removeItem('luminaCutProject');
+        setProject(INITIAL_PROJECT_STATE);
+        setAssets([]);
+    }
+  };
+  
+  const handleCopyClip = useCallback(() => {
+    const selectedClip = project.clips.find(c => c.selected);
+    if (selectedClip) {
+        setClipboard(selectedClip);
+    }
+  }, [project.clips]);
+
+  const handlePasteClip = useCallback(() => {
+    if (!clipboard) return;
+
+    const originalTrack = project.tracks.find(t => t.id === clipboard.trackId);
+    let targetTrackId = (originalTrack && originalTrack.type === clipboard.type)
+      ? originalTrack.id
+      : project.tracks.find(t => t.type === clipboard.type)?.id;
+
+    if (!targetTrackId) {
+        alert(`No suitable track of type '${clipboard.type}' found to paste the clip.`);
+        return;
+    }
+    
+    const newClip: Clip = {
+        ...clipboard,
+        id: Math.random().toString(36).substr(2, 9),
+        startOffset: project.currentTime,
+        trackId: targetTrackId,
+        selected: true,
+    };
+
+    setProject(p => {
+        const updatedClips = p.clips.map(c => ({ ...c, selected: false }));
+        return {
+            ...p,
+            clips: [...updatedClips, newClip],
+            duration: Math.max(p.duration, newClip.startOffset + newClip.duration + 10),
+        };
+    });
+  }, [clipboard, project.tracks, project.currentTime]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+            e.preventDefault();
+            handleCopyClip();
+        }
+
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+            e.preventDefault();
+            handlePasteClip();
+        }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleCopyClip, handlePasteClip]);
+
 
   const handleZoom = (delta: number) => setProject(p => ({ ...p, zoom: Math.max(1, Math.min(200, p.zoom + delta)) }));
   const handleAspectRatioChange = (ratio: AspectRatio) => setProject(p => ({ ...p, aspectRatio: ratio }));
@@ -291,6 +396,9 @@ const App: React.FC = () => {
                 <h1 className="text-sm font-bold text-white tracking-wide leading-none">Lumina</h1>
                 <span className="text-[8px] md:text-[10px] text-gray-500 font-mono">PRO STUDIO</span>
             </div>
+            <Button variant="ghost" size="sm" onClick={handleNewProject} title="New Project" className="ml-2">
+                <FilePlus size={16} />
+            </Button>
         </div>
         <div className="flex items-center gap-2 md:gap-4">
              <div className="hidden md:flex items-center bg-gray-800 rounded-md p-0.5 border border-gray-700">
@@ -313,7 +421,7 @@ const App: React.FC = () => {
       </header>
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
         <div className={`fixed inset-0 z-40 bg-gray-900 md:static md:inset-auto md:z-auto md:block transition-all duration-200 ${showMediaLibrary || showTransitions || showTextPanel ? 'block' : 'hidden'}`}>
-            {showMediaLibrary && <MediaLibrary assets={assets} onAddAsset={addAsset} onAddToTimeline={addToTimeline} onCloseMobile={() => setShowMediaLibrary(false)} />}
+            <MediaLibrary assets={assets} onAddAsset={addAsset} onAddToTimeline={addToTimeline} onCloseMobile={() => setShowMediaLibrary(false)} onClearAssets={() => setAssets([])} />
             {showTransitions && <TransitionsPanel onCloseMobile={() => setShowTransitions(false)} />}
             {showTextPanel && <TextOverlayPanel onAddTextClip={addTextClip} onCloseMobile={() => setShowTextPanel(false)} />}
         </div>
@@ -326,7 +434,7 @@ const App: React.FC = () => {
                  <div className="flex items-center gap-2"><span className="text-[10px] md:text-xs text-gray-500">{project.clips.length} Clips</span></div>
             </div>
             <div className="flex-1 flex flex-col shrink-0 min-h-0">
-                <Timeline state={project} onSeek={handleSeek} onSelectClip={selectClip} onUpdateClip={updateClip} onSplitClip={splitClip} onDeleteClip={deleteSelectedClip} onZoom={handleZoom} onToggleTrackMute={toggleTrackMute} onToggleTrackSolo={toggleTrackSolo} onToggleTrackRecord={toggleTrackRecord} onApplyTransition={handleApplyTransition} onAddMarker={handleAddMarker} onUpdateMarker={handleUpdateMarker} onDeleteMarker={handleDeleteMarker} onFreezeFrame={handleFreezeFrame} />
+                <Timeline state={project} onSeek={handleSeek} onSelectClip={selectClip} onUpdateClip={updateClip} onSplitClip={splitClip} onDeleteClip={deleteSelectedClip} onZoom={handleZoom} onToggleTrackMute={toggleTrackMute} onToggleTrackSolo={toggleTrackSolo} onToggleTrackRecord={toggleTrackRecord} onApplyTransition={handleApplyTransition} onAddMarker={handleAddMarker} onUpdateMarker={handleUpdateMarker} onDeleteMarker={handleDeleteMarker} onFreezeFrame={handleFreezeFrame} onCopyClip={handleCopyClip} onPasteClip={handlePasteClip} isPasteEnabled={clipboard !== null} />
             </div>
         </div>
         {showAiPanel && (<div className="fixed inset-0 z-50 md:static md:inset-auto md:z-auto"><AIAssistant onClose={() => setShowAiPanel(false)} /></div>)}

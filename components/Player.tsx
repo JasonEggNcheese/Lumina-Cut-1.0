@@ -142,19 +142,24 @@ export const Player: React.FC<PlayerProps> = ({ projectState, onTogglePlay, onSe
     return projectState.clips
       .filter(c => {
         const track = projectState.tracks.find(t => t.id === c.trackId);
-        if (!track || track.isMuted || (anySolo && !track.isSolo)) return false;
+        // Mute should not affect visibility, only audio, which is handled by the video element's volume.
+        if (!track || (anySolo && !track.isSolo)) return false;
         return (c.type === 'video' || c.type === 'image') &&
                projectState.currentTime >= c.startOffset && 
                projectState.currentTime < c.startOffset + c.duration;
       })
-      .sort((a, b) => trackOrder.indexOf(b.trackId) - trackOrder.indexOf(a.trackId)).reverse();
+      .sort((a, b) => trackOrder.indexOf(a.trackId) - trackOrder.indexOf(b.trackId));
   };
 
-  const getActiveTextClips = (): Clip[] => projectState.clips.filter(c => {
-      const track = projectState.tracks.find(t => t.id === c.trackId);
-      if (!track || track.isMuted) return false;
-      return c.type === 'text' && projectState.currentTime >= c.startOffset && projectState.currentTime < c.startOffset + c.duration;
-  }).sort((a,b) => projectState.tracks.findIndex(t => t.id === a.trackId) - projectState.tracks.findIndex(t => t.id === b.trackId));
+  const getActiveTextClips = (): Clip[] => {
+    const anySolo = projectState.tracks.some(t => t.isSolo);
+    return projectState.clips.filter(c => {
+        const track = projectState.tracks.find(t => t.id === c.trackId);
+        // Mute should not affect text visibility.
+        if (!track || (anySolo && !track.isSolo)) return false;
+        return c.type === 'text' && projectState.currentTime >= c.startOffset && projectState.currentTime < c.startOffset + c.duration;
+    }).sort((a,b) => projectState.tracks.findIndex(t => t.id === b.trackId) - projectState.tracks.findIndex(t => t.id === a.trackId));
+  }
 
   const getAudibleOnlyClips = (visualClipIds: Set<string>): Clip[] => projectState.clips.filter(c => 
       !visualClipIds.has(c.id) && (c.type === 'audio' || c.type === 'video') &&
@@ -341,9 +346,9 @@ export const Player: React.FC<PlayerProps> = ({ projectState, onTogglePlay, onSe
                 })}
             </div>
             <div className="absolute inset-0 pointer-events-none" style={{ zIndex: activeVisualClips.length }}>
-                {activeTextClips.map(clip => {
+                {activeTextClips.map((clip, index) => {
                     const props = clip.properties; const transition = getTransitionStyle(clip); const baseTransform = getBaseTransform(clip);
-                    return (<div key={clip.id} className="absolute p-4 box-border w-full h-full flex justify-center items-center" style={{ opacity: ((props.opacity ?? 100) / 100) * (transition.opacity ?? 1) }}><div style={{ transform: `${baseTransform} ${transition.transform || ''}`, color: props.fontColor || '#FFFFFF', fontSize: `${props.fontSize || 24}px`, fontWeight: props.fontWeight || 'normal', textAlign: props.textAlign || 'center', fontFamily: props.fontFamily || 'sans-serif', backgroundColor: props.backgroundColor || 'transparent', whiteSpace: 'pre-wrap', padding: '0.2em 0.5em', borderRadius: '0.2em', lineHeight: 1.2 }}>{props.textContent}</div></div>)
+                    return (<div key={clip.id} className="absolute p-4 box-border w-full h-full flex justify-center items-center" style={{ zIndex: index, opacity: ((props.opacity ?? 100) / 100) * (transition.opacity ?? 1) }}><div style={{ transform: `${baseTransform} ${transition.transform || ''}`, color: props.fontColor || '#FFFFFF', fontSize: `${props.fontSize || 24}px`, fontWeight: props.fontWeight || 'normal', textAlign: props.textAlign || 'center', fontFamily: props.fontFamily || 'sans-serif', backgroundColor: props.backgroundColor || 'transparent', whiteSpace: 'pre-wrap', padding: '0.2em 0.5em', borderRadius: '0.2em', lineHeight: 1.2 }}>{props.textContent}</div></div>)
                 })}
             </div>
         </div>

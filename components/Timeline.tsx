@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { ProjectState, Track, Clip, TrackType, TransitionType, Marker } from '../types';
-import { Video, Mic, Type, Scissors, Trash2, ZoomIn, ZoomOut, MoreHorizontal, MousePointer2, Flag, Snowflake } from 'lucide-react';
+import { Video, Mic, Type, Scissors, Trash2, ZoomIn, ZoomOut, MoreHorizontal, MousePointer2, Flag, Snowflake, Copy, ClipboardPaste } from 'lucide-react';
 
 interface TimelineProps {
   state: ProjectState;
@@ -18,6 +18,9 @@ interface TimelineProps {
   onUpdateMarker: (id: string, updates: Partial<Marker>) => void;
   onDeleteMarker: (id: string) => void;
   onFreezeFrame: () => void;
+  onCopyClip: () => void;
+  onPasteClip: () => void;
+  isPasteEnabled: boolean;
 }
 
 interface DragState {
@@ -67,7 +70,8 @@ const WaveformVisualizer = ({ width, color = "#10b981", height = 24 }: { width: 
 export const Timeline: React.FC<TimelineProps> = ({ 
   state, onSeek, onSelectClip, onUpdateClip, onSplitClip, onDeleteClip, onZoom,
   onToggleTrackMute, onToggleTrackSolo, onToggleTrackRecord, onApplyTransition,
-  onAddMarker, onUpdateMarker, onDeleteMarker, onFreezeFrame
+  onAddMarker, onUpdateMarker, onDeleteMarker, onFreezeFrame,
+  onCopyClip, onPasteClip, isPasteEnabled
 }) => {
   const timelineRef = useRef<HTMLDivElement>(null);
   const [isDraggingHeader, setIsDraggingHeader] = useState(false);
@@ -267,6 +271,8 @@ export const Timeline: React.FC<TimelineProps> = ({
       case TrackType.TEXT: return <Type size={16} />;
     }
   };
+  
+  const selectedClip = state.clips.find(c => c.selected);
 
   return (
     <div className="flex flex-col h-full bg-gray-900 select-none text-white">
@@ -275,6 +281,10 @@ export const Timeline: React.FC<TimelineProps> = ({
             <div className="hidden md:flex bg-gray-800 rounded p-0.5 mr-2"><button className="p-1 rounded bg-gray-700 shadow text-white"><MousePointer2 size={14}/></button></div>
             <button onClick={onSplitClip} className="p-2 md:p-1.5 rounded bg-gray-800 md:bg-transparent hover:bg-gray-700 text-gray-300 hover:text-white disabled:opacity-30" title="Split (S)"><Scissors size={16} /></button>
             <button onClick={onFreezeFrame} className="p-2 md:p-1.5 rounded bg-gray-800 md:bg-transparent hover:bg-gray-700 text-gray-300 hover:text-white disabled:opacity-30" title="Freeze Frame"><Snowflake size={16} /></button>
+            <div className="h-4 w-px bg-gray-700 mx-1 hidden md:block"></div>
+            <button onClick={onCopyClip} disabled={!selectedClip} className="p-2 md:p-1.5 rounded bg-gray-800 md:bg-transparent hover:bg-gray-700 text-gray-300 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-300" title="Copy (Cmd+C)"><Copy size={16} /></button>
+            <button onClick={onPasteClip} disabled={!isPasteEnabled} className="p-2 md:p-1.5 rounded bg-gray-800 md:bg-transparent hover:bg-gray-700 text-gray-300 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-gray-300" title="Paste (Cmd+V)"><ClipboardPaste size={16} /></button>
+            <div className="h-4 w-px bg-gray-700 mx-1 hidden md:block"></div>
             <button onClick={onDeleteClip} className="p-2 md:p-1.5 rounded bg-gray-800 md:bg-transparent hover:bg-gray-700 text-gray-300 hover:text-red-400 disabled:opacity-30" title="Delete (Del)"><Trash2 size={16} /></button>
             <button onClick={() => onAddMarker(state.currentTime)} className="p-2 md:p-1.5 rounded bg-gray-800 md:bg-transparent hover:bg-gray-700 text-gray-300 hover:text-white" title="Add Marker (M)"><Flag size={16} /></button>
         </div>

@@ -8,6 +8,7 @@ interface MediaLibraryProps {
   onAddAsset: (asset: MediaAsset) => void;
   onAddToTimeline: (asset: MediaAsset) => void;
   onCloseMobile?: () => void;
+  onClearAssets: () => void;
 }
 
 export const MediaLibrary: React.FC<MediaLibraryProps> = ({ assets, onAddAsset, onAddToTimeline, onCloseMobile }) => {
@@ -61,19 +62,6 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({ assets, onAddAsset, 
     event.target.value = '';
   };
 
-  // Pre-populate with some stock content if empty
-  React.useEffect(() => {
-    if (assets.length === 0) {
-      const stockAssets: MediaAsset[] = [
-        { id: 'stock1', name: 'Neon City', type: 'video', src: 'https://picsum.photos/800/450', duration: 10, thumbnail: 'https://picsum.photos/id/1/200/200' },
-        { id: 'stock2', name: 'Abstract Beat', type: 'audio', src: '#', duration: 30 },
-        { id: 'stock3', name: 'Sunset Vibe', type: 'image', src: 'https://picsum.photos/id/10/800/450', duration: 5 },
-      ];
-      stockAssets.forEach(onAddAsset);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   return (
     <div className="w-full md:w-72 bg-gray-900 border-r border-gray-800 flex flex-col h-full shadow-2xl md:shadow-none">
       <div className="p-4 border-b border-gray-800 flex items-center justify-between">
@@ -97,6 +85,13 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({ assets, onAddAsset, 
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-24 md:pb-4 custom-scrollbar">
+        {assets.length === 0 && (
+            <div className="text-center py-10 text-gray-600">
+                <ImageIcon size={32} className="mx-auto mb-2" />
+                <p className="text-sm">Your media library is empty.</p>
+                <p className="text-xs">Upload files to get started.</p>
+            </div>
+        )}
         {assets.map((asset) => (
           <div key={asset.id} className="group relative bg-gray-800 rounded-md p-2 hover:ring-1 hover:ring-violet-500 transition-all flex items-center gap-3">
             <div className="w-12 h-12 bg-gray-950 rounded overflow-hidden flex-shrink-0 flex items-center justify-center text-gray-600">
